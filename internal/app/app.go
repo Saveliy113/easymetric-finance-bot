@@ -23,7 +23,7 @@ func Run(cfg *config.Config) {
 	}
 
 	// Registering Telegram commands and events
-	tgRouter := tgHandler.NewRouter(bot)
+	tgRouter := tgHandler.NewRouter(bot, cfg)
 	tgRouter.Register()
 
 	webHookUrl := fmt.Sprintf("%s/webhook/telegram", cfg.PublicURL)
