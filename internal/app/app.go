@@ -7,28 +7,35 @@ import (
 	"em-finance-bot/config"
 	httpHandler "em-finance-bot/internal/handler/http"
 	tgHandler "em-finance-bot/internal/handler/telegram"
+	db "em-finance-bot/internal/repository/sqlite"
 
 	"github.com/gofiber/fiber/v3"
 	"gopkg.in/telebot.v3"
 )
 
 func Run(cfg *config.Config) {
+	// Initializing the database
+	db.Init()
+
+	// Initializing repositories
+	userRepo := db.NewUserRepository(db.DB)
+
 	// Initializing Telegram Bot
 	bot, err := telebot.NewBot(telebot.Settings{
-		Token: cfg.BotToken,
+		Token:   cfg.BotToken,
 		Offline: true,
 	})
 	if err != nil {
-		log.Fatalf("Error initializing Telegram bot: %v", err)	
+		log.Fatalf("Error initializing Telegram bot: %v", err)
 	}
 
 	// Registering Telegram commands and events
-	tgRouter := tgHandler.NewRouter(bot, cfg)
+	tgRouter := tgHandler.NewRouter(bot, cfg, userRepo)
 	tgRouter.Register()
 
 	webHookUrl := fmt.Sprintf("%s/webhook/telegram", cfg.PublicURL)
 	err = bot.SetWebhook(&telebot.Webhook{
-		Endpoint: &telebot.WebhookEndpoint{ PublicURL: webHookUrl},
+		Endpoint:    &telebot.WebhookEndpoint{PublicURL: webHookUrl},
 		SecretToken: cfg.TelegramSecretToken,
 	})
 
