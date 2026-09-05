@@ -1,6 +1,7 @@
 .env.dev
 .env.prod
 credentials.json
+em.db
 bin/
 vendor/
 tmp/
