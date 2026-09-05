@@ -1,22 +1,27 @@
 package telegram
 
 import (
+	"context"
 	"fmt"
 
 	"em-finance-bot/config"
+	"em-finance-bot/internal/domain"
+	db "em-finance-bot/internal/repository/sqlite"
 
 	"gopkg.in/telebot.v3"
 )
 
 type Router struct {
-	bot *telebot.Bot
-	cfg *config.Config
+	bot      *telebot.Bot
+	cfg      *config.Config
+	userRepo *db.UserRepository
 }
 
-func NewRouter(bot *telebot.Bot, cfg *config.Config) *Router {
+func NewRouter(bot *telebot.Bot, cfg *config.Config, userRepo *db.UserRepository) *Router {
 	return &Router{
-		bot: bot,
-		cfg: cfg,
+		bot:      bot,
+		cfg:      cfg,
+		userRepo: userRepo,
 	}
 }
 
@@ -29,12 +34,41 @@ func (r *Router) Register() {
 
 	// Inline buttons for first step
 	step1Markup := &telebot.ReplyMarkup{}
-	btnCopyTemplate := step1Markup.URL("📑 1. Скопировать шаблон таблицы", r.cfg.TemplateSheetURL)
-	btnConfirmAccess := step1Markup.Data("✅ 2. Я открыл доступ боту", "step_confirm_access")
+	btnStartConfiguration := step1Markup.Data("⚙️ Начать настройку", "start_configuration")
 	step1Markup.Inline(
-		step1Markup.Row(btnCopyTemplate),
-		step1Markup.Row(btnConfirmAccess),
+		step1Markup.Row(btnStartConfiguration),
 	)
+
+	// Handling configuration first step
+	r.bot.Handle(&btnStartConfiguration, func(c telebot.Context) error {
+		// Responding to telegram to stop loading animation
+		_ = c.Respond()
+
+		// Delete inline buttons from the previous message
+		_, _ = r.bot.EditReplyMarkup(c.Message(), nil)
+
+		// Save user in the db
+		ctx := context.Background()
+		sender := c.Sender()
+
+		user := &domain.User{
+			TelegramID: sender.ID,
+			Username:   sender.Username,
+			State:      domain.StateAwaitingCity,
+		}
+
+		if err := r.userRepo.Upsert(ctx, user); err != nil {
+			// TODO: Log the error and return back "Go to configure" button
+			return c.Send("⚠️ Произошла ошибка при сохранении профиля. Попробуй еще раз.")
+		}
+
+		// Sending next step
+		return c.Send(
+			"📍 *Шаг 1 из 3: Твой город*\n\n"+
+				"Напиши свой город (например, Алматы или Москва). Это нужно для точного времени и базовой валюты:",
+			telebot.ModeMarkdown,
+		)
+	})
 
 	// Inline buttons for step 2 - categories choice
 	categoriesChoiceMarkup := &telebot.ReplyMarkup{}
@@ -57,12 +91,8 @@ func (r *Router) Register() {
 				"Просто отправляй мне информацию о тратах или поступлениях текстом или голосовым сообщением (например, `Кофе 1500` или `Зарплата 450000`). Я сам распознаю детали, определю категорию и внесу запись в таблицу.\n\n"+
 				"📊 *Аналитика в один клик:*\n"+
 				"Ты всегда можешь спросить: _«Сколько я потратил на кофе в апреле?»_ или запросить полную статистику за любой период.\n\n"+
-				"⚙️ *Быстрая настройка за 2 шага:*\n\n"+
-				"1️⃣ Нажми кнопку ниже и создай копию шаблона таблицы.\n"+
-				"2️⃣ В новой таблице нажми *«Настройки доступа» (Share)* и добавь сервисный email редактором:\n`%s`\n\n"+
-				"Как только откроешь доступ — нажимай кнопку подтверждения 👇",
+				"⚙️ *Перед тем, как начать, нужно выполнить простую настройку* 👇\n\n",
 			user.FirstName,
-			r.cfg.GoogleServiceAccountEmail,
 		)
 
 		return c.Send(text, step1Markup, telebot.ModeMarkdown)
