@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -14,10 +15,11 @@ import (
 )
 
 type Router struct {
-	bot       *telebot.Bot
-	cfg       *config.Config
-	userRepo  *db.UserRepository
-	aiService *ai.GeminiService
+	bot            *telebot.Bot
+	cfg            *config.Config
+	userRepo       *db.UserRepository
+	aiService      *ai.GeminiService
+	categoriesMenu *telebot.ReplyMarkup
 }
 
 func NewRouter(bot *telebot.Bot, cfg *config.Config, userRepo *db.UserRepository, aiService *ai.GeminiService) *Router {
@@ -82,6 +84,17 @@ func (r *Router) Register() {
 		categoriesChoiceMarkup.Row(btnKeepDefault),
 		categoriesChoiceMarkup.Row(btnCustomCat),
 	)
+
+	// Categories markup
+	r.categoriesMenu = &telebot.ReplyMarkup{}
+	btnDefault := r.categoriesMenu.Data("✅ Использовать стандартные", "use_default_categories")
+
+	r.categoriesMenu.Inline(
+		r.categoriesMenu.Row(btnDefault),
+	)
+
+	// 2. Регистрируем слушатель нажатия
+	r.bot.Handle(&btnDefault, r.handleUseDefaultCategories)
 
 	// Обработчик команды /start
 	r.bot.Handle("/start", func(c telebot.Context) error {
@@ -156,7 +169,7 @@ func (r *Router) handleCityInput(c telebot.Context, user *domain.User) error {
 	// Updating user location data and state
 	user.Timezone = locationInfo.Timezone
 	user.Currency = locationInfo.Currency
-	user.State = domain.StateAwaitingSheetURL
+	user.State = domain.StateAwaitingCategories
 
 	if err := r.userRepo.Upsert(ctx, user); err != nil {
 		return c.Send("⚠️ Ошибка при сохранении данных в базу. Попробуй ещё раз.")
@@ -176,37 +189,81 @@ func (r *Router) handleCityInput(c telebot.Context, user *domain.User) error {
 		return err
 	}
 
-	var (
-		// Создаем разметку инлайн-клавиатуры
-		categoriesMenu       = &telebot.ReplyMarkup{}
-		btnDefaultCategories = categoriesMenu.Data("✅ Использовать стандартные", "use_default_categories")
-	)
+	err = r.handleCategoriesStep(c)
+	if err != nil {
+		return err
+	}
 
-	const categoriesPromptText = `📍 *Шаг 2 из 3: Настройка категорий трат*
+	return nil
+}
 
-Категории помогают боту автоматически распределять твои расходы. 
-
-Вот готовый сбалансированный набор:
-
-• 🛒 *Продукты* — супермаркеты, бакалея, доставка еды
-• ☕ *Кафе и рестораны* — кофе, фастфуд, бары, готовая еда
-• 🚗 *Транспорт* — такси, бензин, проездной, парковки
-• 🛍 *Покупки* — одежда, техника, маркетплейсы, дом
-• 🎉 *Развлечения* — кино, спорт, хобби, концерты, отдых
-• 💊 *Здоровье* — аптеки, врачи, анализы, стоматология
-• 🔄 *Регулярные платежи* — аренда, коммуналка, связь, интернет, подписки
-• 📦 *Прочее* — подарки, комиссии, непредвиденные траты
-
----
-Выбери действие:
-• Нажми кнопку ниже, чтобы применить этот набор
-• Либо отправь свой список через запятую (например: _Еда, Авто, Дом, Хобби_)`
-
-	categoriesMenu.Inline(
-		categoriesMenu.Row(btnDefaultCategories),
-	)
+func (r *Router) handleCategoriesStep(c telebot.Context) error {
+	categoriesPromptText := "📍 *Шаг 2 из 3: Настройка категорий трат*\n\n" +
+		"Категории помогают боту автоматически распределять твои расходы.\n\n" +
+		"Вот готовый сбалансированный набор:\n" +
+		"• 🛒 *Продукты* — супермаркеты, бакалея, еда\n" +
+		"• ☕ *Кафе и рестораны* — кофе, фастфуд, бары\n" +
+		"• 🚗 *Транспорт* — такси, бензин, проездной\n" +
+		"• 🛍 *Покупки* — одежда, техника, дом\n" +
+		"• 🎉 *Развлечения* — кино, спорт, отдых\n" +
+		"• 💊 *Здоровье* — аптеки, врачи\n" +
+		"• 🔄 *Регулярные платежи* — аренда, связь, подписки\n" +
+		"• 📦 *Прочее* — подарки, непредвиденные траты\n\n" +
+		"---\n" +
+		"Выбери действие:\n" +
+		"• Нажми кнопку ниже, чтобы применить этот набор\n" +
+		"• Либо отправь свой список через запятую (например: _Еда, Авто, Дом, Хобби_)"
 
 	return c.Send(categoriesPromptText,
-		categoriesMenu,
+		r.categoriesMenu,
 		telebot.ModeMarkdown)
+}
+
+func (r *Router) handleUseDefaultCategories(c telebot.Context) error {
+	fmt.Println("USER CHOOSED DEFAULT CATEGORIES")
+	ctx := context.Background()
+	senderId := c.Sender().ID
+
+	defaultCategoriesList := [8]string{
+		"Продукты",
+		"Кафе и рестораны",
+		"Транспорт",
+		"Покупки",
+		"Развлечения",
+		"Здоровье",
+		"Регулярные платежи",
+		"Прочее",
+	}
+
+	// Serializing default categories for saving in the db
+	categoriesBytes, err := json.Marshal(defaultCategoriesList)
+	if err != nil {
+		return fmt.Errorf("failed to marshal categories: %w", err)
+	}
+
+	// Getting user from the db
+	user, err := r.userRepo.GetByTelegramId(ctx, senderId)
+	if err != nil {
+		return c.Send("⚠️ Ошибка при получении профиля. Попробуй позже.")
+	}
+	if user == nil {
+		return c.Send("⚠️ Профиль не найден. Начни с команды /start.")
+	}
+
+	user.CategoriesCache = string(categoriesBytes)
+	user.State = domain.StateAwaitingSheetURL
+
+	if err := r.userRepo.Upsert(ctx, user); err != nil {
+		return c.Send("⚠️ Не удалось сохранить категории. Попробуй еще раз.")
+	}
+
+	// 6. Отправляем инструкцию к Шагу 3 (Google Sheets)
+	nextStepText := "✅ Стандартные категории успешно подключены!\n\n" +
+		"📍 *Шаг 3 из 3: Подключение Google Таблицы*\n\n" +
+		"1. Создай копию шаблона таблицы `EM Personal Finances`.\n" +
+		"2. Выдай доступ на редактирование сервисному аккаунту бота:\n" +
+		fmt.Sprintf("`%s`\n\n", r.cfg.GoogleServiceAccountEmail) + // если есть в конфиге email
+		"3. Отправь ссылку на свою готовую копию таблицы в ответном сообщении:"
+
+	return c.Send(nextStepText, telebot.ModeMarkdown)
 }
