@@ -14,6 +14,7 @@ type Config struct {
 	TelegramSecretToken string
 	TemplateSheetURL string
 	GoogleServiceAccountEmail string
+	GeminiAPIKey string
 }
 
 func LoadConfig() *Config {
@@ -52,5 +53,6 @@ func LoadConfig() *Config {
 		TelegramSecretToken: os.Getenv("TELEGRAM_SECRET_TOKEN"),
 		TemplateSheetURL: os.Getenv("TEMPLATE_SHEET_URL"),
 		GoogleServiceAccountEmail: os.Getenv("GOOGLE_SERVICE_ACCOUNT_EMAIL"),
+		GeminiAPIKey: os.Getenv("GEMINI_API_KEY"),
 	}
 }
