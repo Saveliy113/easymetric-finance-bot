@@ -9,7 +9,7 @@ import (
 	"google.golang.org/genai"
 )
 
-const CityResolutionPrompt = `
+const cityResolutionPrompt = `
 Ты системный анализатор географических названий. 
 Тебе передано название города или населенного пункта: "%s".
 
@@ -54,7 +54,7 @@ func NewGeminiService(ctx context.Context, apiKey string) *GeminiService {
 }
 
 func (s *GeminiService) ParseCity(ctx context.Context, cityName string) (*LocationInfo, error) {
-	prompt := fmt.Sprintf(CityResolutionPrompt, cityName)
+	prompt := fmt.Sprintf(cityResolutionPrompt, cityName)
 
 	config := &genai.GenerateContentConfig{
 		ResponseMIMEType: "application/json",

@@ -5,10 +5,11 @@ import "time"
 type UserState string
 
 const (
-	StateNone             UserState = ""
-	StateAwaitingCity     UserState = "AWAITING_CITY"
-	StateAwaitingSheetURL UserState = "AWAITING_SHEET_URL"
-	StateReady            UserState = "READY"
+	StateNone             	UserState = ""
+	StateAwaitingCity     	UserState = "AWAITING_CITY"
+	StateAwaitingCategories UserState = "AWAITING_CATEGORIES"
+	StateAwaitingSheetURL 	UserState = "AWAITING_SHEET_URL"
+	StateReady            	UserState = "READY"
 )
 
 type User struct {
@@ -19,7 +20,7 @@ type User struct {
 	Timezone        string
 	Currency        string
 	SpreadsheetID   string
-	CategoriesCache []string
+	CategoriesCache string
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
