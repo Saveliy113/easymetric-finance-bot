@@ -10,6 +10,7 @@ import (
 	tgHandler "em-finance-bot/internal/handler/telegram"
 	db "em-finance-bot/internal/repository/sqlite"
 	ai "em-finance-bot/internal/service/ai"
+	sheets "em-finance-bot/internal/service/sheets"
 
 	"github.com/gofiber/fiber/v3"
 	"gopkg.in/telebot.v3"
@@ -24,6 +25,9 @@ func Run(cfg *config.Config) {
 	// Initializing Gemini service
 	geminiService := ai.NewGeminiService(context, cfg.GeminiAPIKey)
 
+	// Initializing Google Sheets service
+	sheetsService := sheets.NewSheetService(context, cfg.GoogleCredentialsPath)
+
 	// Initializing repositories
 	userRepo := db.NewUserRepository(db.DB)
 
@@ -37,7 +41,7 @@ func Run(cfg *config.Config) {
 	}
 
 	// Registering Telegram commands and events
-	tgRouter := tgHandler.NewRouter(bot, cfg, userRepo, geminiService)
+	tgRouter := tgHandler.NewRouter(bot, cfg, userRepo, geminiService, sheetsService)
 	tgRouter.Register()
 
 	webHookUrl := fmt.Sprintf("%s/webhook/telegram", cfg.PublicURL)
