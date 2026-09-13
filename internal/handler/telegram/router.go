@@ -270,12 +270,15 @@ func (r *Router) handleUserCustomCategories(c telebot.Context) error {
 	}
 
 	// Sending instructions for step 3 - connecting Google Sheets
-	nextStepText := "✅ Категории успешно подключены!\n\n" +
-		"📍 *Шаг 3 из 3: Подключение Google Таблицы*\n\n" +
-		"1. Создай копию шаблона таблицы `EM Personal Finances`.\n" +
-		"2. Выдай доступ на редактирование сервисному аккаунту бота:\n" +
-		fmt.Sprintf("`%s`\n\n", r.cfg.GoogleServiceAccountEmail) + // если есть в конфиге email
-		"3. Отправь ссылку на свою готовую копию таблицы в ответном сообщении:"
+	nextStepText := fmt.Sprintf(
+		"✅ Категории успешно подключены!\n\n"+
+			"📍 *Шаг 3 из 3: Подключение Google Таблицы*\n\n"+
+			"1. [Создай копию шаблона таблицы EM Personal Finances](%s)\n"+
+			"2. Выдай доступ на редактирование сервисному аккаунту бота:\n`%s`\n\n"+
+			"3. Отправь ссылку на свою готовую копию таблицы в ответном сообщении:",
+		r.cfg.TemplateSheetURL,
+		r.cfg.GoogleServiceAccountEmail,
+	)
 
 	return c.Send(nextStepText, telebot.ModeMarkdown)
 }
