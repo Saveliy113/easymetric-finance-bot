@@ -15,6 +15,7 @@ type Config struct {
 	TemplateSheetURL string
 	GoogleServiceAccountEmail string
 	GeminiAPIKey string
+	GoogleCredentialsPath string
 }
 
 func LoadConfig() *Config {
@@ -54,5 +55,6 @@ func LoadConfig() *Config {
 		TemplateSheetURL: os.Getenv("TEMPLATE_SHEET_URL"),
 		GoogleServiceAccountEmail: os.Getenv("GOOGLE_SERVICE_ACCOUNT_EMAIL"),
 		GeminiAPIKey: os.Getenv("GEMINI_API_KEY"),
+		GoogleCredentialsPath: os.Getenv("GOOGLE_CREDENTIALS_PATH"),
 	}
 }
