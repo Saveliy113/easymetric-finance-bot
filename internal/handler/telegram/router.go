@@ -137,6 +137,8 @@ func (r *Router) handleTextMessage(c telebot.Context) error {
 	switch user.State {
 	case domain.StateAwaitingCity:
 		return r.handleCityInput(c, user)
+	case domain.StateAwaitingCategories:
+		return r.handleUserCustomCategories(c)
 	default:
 		return c.Send("⚠️ Неизвестное состояние профиля. Пожалуйста, начни настройку с команды /start.")
 	}
@@ -217,6 +219,65 @@ func (r *Router) handleCategoriesStep(c telebot.Context) error {
 	return c.Send(categoriesPromptText,
 		r.categoriesMenu,
 		telebot.ModeMarkdown)
+}
+
+func (r *Router) handleUserCustomCategories(c telebot.Context) error {
+	ctx := context.Background()
+	senderId := c.Sender().ID
+	inputCategories := strings.TrimSpace(c.Text())
+
+	waitMsg, _ := r.bot.Send(c.Chat(), "⏳ Анализирую категории трат...")
+
+	// Getting data using gemini
+	categoriesInfo, err := r.aiService.ParseCategories(ctx, inputCategories)
+	if waitMsg != nil {
+		_ = r.bot.Delete(waitMsg)
+	}
+
+	if err != nil {
+		fmt.Println("Error while detecting categories: %v", err)
+		return c.Send("⚠️ Ошибка при анализе категорий. Попробуй еще раз.")
+
+	}
+
+	if !categoriesInfo.IsValid && categoriesInfo.ErrorMessage != "" {
+		return c.Send(categoriesInfo.ErrorMessage)
+	}
+
+	fmt.Println("USER CHOOSED CUSTOM CATEGORIES:", categoriesInfo.Categories)
+
+	// Saving user's categories to db
+	// Getting user from the db
+	user, err := r.userRepo.GetByTelegramId(ctx, senderId)
+	if err != nil {
+		return c.Send("⚠️ Ошибка при получении профиля. Попробуй позже.")
+	}
+	if user == nil {
+		return c.Send("⚠️ Профиль не найден. Начни с команды /start.")
+	}
+
+	// Serializing default categories for saving in the db
+	categoriesBytes, err := json.Marshal(categoriesInfo.Categories)
+	if err != nil {
+		return fmt.Errorf("failed to marshal categories: %w", err)
+	}
+
+	user.CategoriesCache = string(categoriesBytes)
+	user.State = domain.StateAwaitingSheetURL
+
+	if err := r.userRepo.Upsert(ctx, user); err != nil {
+		return c.Send("⚠️ Не удалось сохранить категории. Попробуй еще раз.")
+	}
+
+	// Sending instructions for step 3 - connecting Google Sheets
+	nextStepText := "✅ Категории успешно подключены!\n\n" +
+		"📍 *Шаг 3 из 3: Подключение Google Таблицы*\n\n" +
+		"1. Создай копию шаблона таблицы `EM Personal Finances`.\n" +
+		"2. Выдай доступ на редактирование сервисному аккаунту бота:\n" +
+		fmt.Sprintf("`%s`\n\n", r.cfg.GoogleServiceAccountEmail) + // если есть в конфиге email
+		"3. Отправь ссылку на свою готовую копию таблицы в ответном сообщении:"
+
+	return c.Send(nextStepText, telebot.ModeMarkdown)
 }
 
 func (r *Router) handleUseDefaultCategories(c telebot.Context) error {
