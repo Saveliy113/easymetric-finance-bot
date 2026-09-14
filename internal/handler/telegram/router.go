@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 
@@ -241,7 +242,7 @@ func (r *Router) handleUserCustomCategories(c telebot.Context) error {
 	}
 
 	if err != nil {
-		fmt.Println("Error while detecting categories: %v", err)
+		fmt.Printf("Error while detecting categories: %v", err)
 		return c.Send("⚠️ Ошибка при анализе категорий. Попробуй еще раз.")
 
 	}
@@ -268,6 +269,12 @@ func (r *Router) handleUserCustomCategories(c telebot.Context) error {
 		return fmt.Errorf("failed to marshal categories: %w", err)
 	}
 
+	// Setup user categories in sheets
+	if err := r.sheetsService.SetupUserCategories(ctx, user.SpreadsheetID, "Дашборд", categoriesInfo.Categories); err != nil {
+		slog.Error("Не удалось настроить категории", "ошибка", err)
+	}
+
+	// Saving user to the db
 	user.CategoriesCache = string(categoriesBytes)
 	user.State = domain.StateAwaitingSheetURL
 
@@ -320,6 +327,12 @@ func (r *Router) handleUseDefaultCategories(c telebot.Context) error {
 		return c.Send("⚠️ Профиль не найден. Начни с команды /start.")
 	}
 
+	// Setup user categories in sheets
+	if err := r.sheetsService.SetupUserCategories(ctx, user.SpreadsheetID, "Дашборд", defaultCategoriesList[:]); err != nil {
+		slog.Error("Не удалось настроить категории", "ошибка", err)
+	}
+
+	// Saving user to the db
 	user.CategoriesCache = string(categoriesBytes)
 	user.State = domain.StateAwaitingSheetURL
 
