@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
@@ -14,6 +15,25 @@ import (
 
 type SheetsService struct {
 	srv *sheets.Service
+}
+
+type TransactionType string
+
+const (
+	TypeExpense TransactionType = "expense" // Расход
+	TypeIncome  TransactionType = "income"  // Доход
+)
+
+// Transaction представляет финансовую операцию пользователя
+type Transaction struct {
+	ID          int64           `json:"id" db:"id"`
+	UserID      int64           `json:"user_id" db:"user_id"`         // Telegram User ID
+	Type        TransactionType `json:"type" db:"type"`               // "expense" или "income"
+	Amount      float64         `json:"amount" db:"amount"`           // Числовая сумма без знака валюты
+	Category    string          `json:"category" db:"category"`       // Категория расхода или "Доход"
+	Description string          `json:"description" db:"description"` // Описание (например, "Обед с коллегами")
+	Date        time.Time       `json:"date" db:"date"`               // Дата и время совершения операции
+	CreatedAt   time.Time       `json:"created_at" db:"created_at"`   // Время создания записи в БД
 }
 
 func NewSheetService(ctx context.Context, credentialsFilePath string) *SheetsService {
@@ -167,6 +187,77 @@ func (s *SheetsService) SetupUserCategories(
 	slog.Info("Категории, формулы сумм и выпадающие списки успешно настроены",
 		"лист", actualSheetName,
 		"строк", totalCats,
+	)
+
+	return nil
+}
+
+func (s *SheetsService) SaveTransaction(ctx context.Context, spreadsheetID string, transaction *Transaction) error {
+	if transaction == nil {
+		return fmt.Errorf("транзакция не может быть nil")
+	}
+
+	// 1. Форматируем дату операции для колонки E: YYYY-MM-DD
+	dateStr := transaction.Date.Format("2006-01-02")
+
+	// 2. Форматируем Месяц/Год для колонки I: YYYY-MM
+	monthYearStr := transaction.Date.Format("2006-01")
+
+	// 3. Определяем отображаемый тип и категорию
+	var displayType string
+	var finalCategory string
+
+	if transaction.Type == "income" || transaction.Type == "Доход" {
+		displayType = "Доход"
+		finalCategory = "Доход"
+	} else {
+		displayType = "Расход"
+		finalCategory = transaction.Category
+	}
+
+	// 4. Формируем строку строго по колонкам E, F, G, H, I, J
+	rowValues := []interface{}{
+		dateStr,                 // E: Дата (например, 2026-08-12)
+		finalCategory,           // F: Категория ("Доход" или категория расхода)
+		displayType,             // G: Тип ("Расход" / "Доход")
+		transaction.Amount,      // H: Числовая сумма без валюты (например, 12500)
+		monthYearStr,            // I: Месяц/Год (например, 2026-08)
+		transaction.Description, // J: Описание
+	}
+
+	// Диапазон добавления в журнал на листе "Дашборд"
+	targetRange := "'Дашборд'!E:J"
+
+	valueRange := &sheets.ValueRange{
+		Values: [][]interface{}{rowValues},
+	}
+
+	slog.Debug("Сохранение транзакции в Google Таблицу",
+		"таблица_id", spreadsheetID,
+		"тип", displayType,
+		"сумма", transaction.Amount,
+		"категория", finalCategory,
+	)
+
+	// Append находит первую свободную строку после шапки журнала (строка 3) и вставляет данные
+	_, err := s.srv.Spreadsheets.Values.Append(spreadsheetID, targetRange, valueRange).
+		ValueInputOption("USER_ENTERED").
+		InsertDataOption("INSERT_ROWS").
+		Context(ctx).
+		Do()
+	if err != nil {
+		slog.Error("Ошибка при сохранении транзакции в таблицу",
+			"ошибка", err,
+			"таблица_id", spreadsheetID,
+			"диапазон", targetRange,
+		)
+		return fmt.Errorf("ошибка добавления строки в таблицу: %w", err)
+	}
+
+	slog.Info("Транзакция успешно записана в журнал",
+		"тип", displayType,
+		"сумма", transaction.Amount,
+		"категория", finalCategory,
 	)
 
 	return nil
