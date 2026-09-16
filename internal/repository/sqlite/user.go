@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"em-finance-bot/internal/domain"
 )
@@ -59,10 +60,10 @@ func (r *UserRepository) GetByTelegramId(ctx context.Context, telegramId int64) 
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// If no user is found, return nil without an error
-			return nil, nil
+			return nil, fmt.Errorf("[ UserRepository.GetByTelegramId ] %w (tg_id: %d)", domain.ErrUserNotFound, telegramId)
 		}
-		return nil, err
+
+		return nil, fmt.Errorf("[ UserRepository.GetByTelegramId ] Error scanning user row (tg_id: %d): %w", telegramId, err)
 	}
 
 	// Map the state string to the UserState type
@@ -76,7 +77,9 @@ func (r *UserRepository) GetByTelegramId(ctx context.Context, telegramId int64) 
 	}
 
 	if categoriesJSON.Valid && categoriesJSON.String != "" {
-		_ = json.Unmarshal([]byte(categoriesJSON.String), &u.CategoriesCache)
+		if err := json.Unmarshal([]byte(categoriesJSON.String), &u.CategoriesCache); err != nil {
+			return nil, fmt.Errorf("[ UserRepository.GetByTelegramId ] Error unmarshalling categories (tg_id: %d): %w", telegramId, domain.ErrParsingJson)
+		}
 	}
 
 	if timezone.Valid {
