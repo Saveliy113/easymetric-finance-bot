@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
+	"os"
 
 	"em-finance-bot/config"
 	httpHandler "em-finance-bot/internal/handler/http"
@@ -11,22 +13,31 @@ import (
 	db "em-finance-bot/internal/repository/sqlite"
 	ai "em-finance-bot/internal/service/ai"
 	sheets "em-finance-bot/internal/service/sheets"
+	"em-finance-bot/pkg/logger"
 
 	"github.com/gofiber/fiber/v3"
 	"gopkg.in/telebot.v3"
 )
 
 func Run(cfg *config.Config) {
-	context := context.Background()
+	ctx := context.Background()
+
+	// Configuring global logger
+	baseLogHandler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level:     slog.LevelDebug,
+		AddSource: true,
+	})
+	traceHandler := logger.NewTraceHandler(baseLogHandler)
+	slog.SetDefault(slog.New(traceHandler))
 
 	// Initializing the database
 	db.Init()
 
 	// Initializing Gemini service
-	geminiService := ai.NewGeminiService(context, cfg.GeminiAPIKey)
+	geminiService := ai.NewGeminiService(ctx, cfg.GeminiAPIKey)
 
 	// Initializing Google Sheets service
-	sheetsService := sheets.NewSheetService(context, cfg.GoogleCredentialsPath)
+	sheetsService := sheets.NewSheetService(ctx, cfg.GoogleCredentialsPath)
 
 	// Initializing repositories
 	userRepo := db.NewUserRepository(db.DB)
