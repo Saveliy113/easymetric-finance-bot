@@ -20,6 +20,15 @@ func (r *Router) categoriesMarkup() *telebot.ReplyMarkup {
 	markup := &telebot.ReplyMarkup{}
 	btnDefault := markup.Data("✅ Использовать стандартные", btnIDDefaultCat)
 	markup.Inline(markup.Row(btnDefault))
-	
+
+	return markup
+}
+
+func (r *Router) defaultCategoriesMarkup() *telebot.ReplyMarkup {
+	markup := &telebot.ReplyMarkup{}
+	btnDefault := markup.Data("✅ Использовать стандартные", btnIDDefaultCat)
+
+	markup.Inline(markup.Row(btnDefault))
+
 	return markup
 }
