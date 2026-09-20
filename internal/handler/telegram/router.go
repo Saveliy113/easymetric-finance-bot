@@ -3,7 +3,6 @@ package telegram
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -48,43 +47,8 @@ func (r *Router) Register() {
 	btnCategories := menu.Text("⚙️ Категории")
 	menu.Reply(menu.Row(btnCategories))
 
-	// Inline buttons for first step
-	step1Markup := &telebot.ReplyMarkup{}
-	btnStartConfiguration := step1Markup.Data("⚙️ Начать настройку", "start_configuration")
-	step1Markup.Inline(
-		step1Markup.Row(btnStartConfiguration),
-	)
-
 	// Handling configuration first step
-	r.bot.Handle(&btnStartConfiguration, func(c telebot.Context) error {
-		// Responding to telegram to stop loading animation
-		_ = c.Respond()
-
-		// Delete inline buttons from the previous message
-		_, _ = r.bot.EditReplyMarkup(c.Message(), nil)
-
-		// Save user in the db
-		ctx := context.Background()
-		sender := c.Sender()
-
-		user := &domain.User{
-			TelegramID: sender.ID,
-			Username:   sender.Username,
-			State:      domain.StateAwaitingCity,
-		}
-
-		if err := r.userRepo.Upsert(ctx, user); err != nil {
-			// TODO: Log the error and return back "Go to configure" button
-			return c.Send("⚠️ Произошла ошибка при сохранении профиля. Попробуй еще раз.")
-		}
-
-		// Sending next step
-		return c.Send(
-			"📍 *Шаг 1 из 3: Твой город*\n\n"+
-				"Напиши свой город (например, Алматы или Москва). Это нужно для точного времени и базовой валюты:",
-			telebot.ModeMarkdown,
-		)
-	})
+	r.bot.Handle(&telebot.InlineButton{Unique: "start_configuration"}, r.handleStartConfiguration)
 
 	// Inline buttons for step 2 - categories choice
 	categoriesChoiceMarkup := &telebot.ReplyMarkup{}
@@ -550,49 +514,4 @@ func (r *Router) handleMoneyOperation(c telebot.Context) error {
 	}
 
 	return c.Send(textResponse, telebot.ModeHTML)
-}
-
-func (r *Router) handleError(ctx context.Context, c telebot.Context, err error) error {
-	// Ignoring request cancelation by user or due to timeout
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		slog.DebugContext(ctx, "Запрос отменен клиентом или прерван по таймауту", slog.Any("error", err))
-		return nil
-	}
-
-	// User metadata for logging (if available)
-	var userID int64
-	var username string
-	if sender := c.Sender(); sender != nil {
-		userID = sender.ID
-		username = sender.Username
-	}
-
-	// Handling business errors (Known Domain/Service Errors)
-	switch {
-	case errors.Is(err, domain.ErrUserNotFound):
-		slog.WarnContext(ctx, "Пользователь не найден в системе",
-			slog.Int64("user_id", userID),
-			slog.String("username", username),
-		)
-
-		return c.Send("Похоже, что ты еще не зарегистрирован. Отправь /start для начала работы.")
-	}
-
-	// Handling technical errors
-	traceID := trace.FromContext(ctx)
-
-	slog.ErrorContext(ctx, "Внутренний системный сбой",
-		slog.Int64("user_id", userID),
-		slog.String("username", username),
-		slog.Any("error", err),
-	)
-
-	userMsg := fmt.Sprintf(
-		"⚠️ <b>Произошла внутренняя ошибка.</b>\n\n"+
-			"Попробуй ещё раз позже. Если проблема не решится, перешли это разработчику <a href=\"https://t.me/saveliy_d13\">@saveliy_d13</a>:\n\n"+
-			"<code>Код ошибки: %s</code>",
-		traceID,
-	)
-
-	return c.Send(userMsg, telebot.ModeHTML)
 }

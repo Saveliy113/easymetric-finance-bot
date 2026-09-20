@@ -78,7 +78,7 @@ func (r *UserRepository) GetByTelegramId(ctx context.Context, telegramId int64) 
 
 	if categoriesJSON.Valid && categoriesJSON.String != "" {
 		if err := json.Unmarshal([]byte(categoriesJSON.String), &u.CategoriesCache); err != nil {
-			return nil, fmt.Errorf("[ UserRepository.GetByTelegramId ] Error unmarshalling categories (tg_id: %d): %w", telegramId, domain.ErrParsingJson)
+			return nil, fmt.Errorf("[ UserRepository.GetByTelegramId ] (tg_id: %d): %w", telegramId, err)
 		}
 	}
 
@@ -99,7 +99,7 @@ func (r *UserRepository) Upsert(ctx context.Context, user *domain.User) error {
 	if len(user.CategoriesCache) > 0 {
 		categoriesBytes, err := json.Marshal(user.CategoriesCache)
 		if err != nil {
-			return err
+			return fmt.Errorf("[ UserRepository.Upsert ] (tg_id: %d): %w", user.TelegramID, err)
 		}
 		categoriesJSON = sql.NullString{String: string(categoriesBytes), Valid: true}
 	}

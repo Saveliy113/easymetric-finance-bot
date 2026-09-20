@@ -1,6 +1,10 @@
 package telegram
 
 import (
+	"context"
+	"em-finance-bot/internal/domain"
+	"em-finance-bot/pkg/idgen"
+	"em-finance-bot/pkg/trace"
 	"fmt"
 
 	"gopkg.in/telebot.v3"
@@ -23,4 +27,36 @@ func (r *Router) handleGreeting(c telebot.Context) error {
 	)
 
 	return c.Send(text, startConfigMarkup, telebot.ModeMarkdown)
+}
+
+func (r *Router) handleStartConfiguration(c telebot.Context) error {
+	// Responding to telegram to stop loading animation
+	_ = c.Respond()
+
+	// Delete inline buttons from the previous message
+	_, _ = r.bot.EditReplyMarkup(c.Message(), nil)
+
+	// Creating request trace id and creating context with it
+	traceId := idgen.Short()
+	ctx := trace.WithId(context.Background(), traceId)
+
+	// Save user in the db
+	sender := c.Sender()
+
+	user := &domain.User{
+		TelegramID: sender.ID,
+		Username:   sender.Username,
+		State:      domain.StateAwaitingCity,
+	}
+
+	if err := r.userRepo.Upsert(ctx, user); err != nil {
+		return r.handleError(ctx, c, err)
+	}
+
+	// Sending next step
+	return c.Send(
+		"📍 *Шаг 1 из 3: Твой город*\n\n"+
+			"Напиши свой город (например, Алматы или Москва). Это нужно для точного времени и базовой валюты:",
+		telebot.ModeMarkdown,
+	)
 }
