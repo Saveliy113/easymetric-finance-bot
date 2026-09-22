@@ -2,25 +2,29 @@ package telegram
 
 import (
 	"context"
-	"em-finance-bot/internal/domain"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
+
+	"em-finance-bot/internal/domain"
 
 	"gopkg.in/telebot.v3"
 )
 
-func (r *Router) handleSheetURLInput(c telebot.Context) error {
-	ctx := context.Background()
-	senderId := c.Sender().ID
+
+func (r *Router) handleSheetURLInput(ctx context.Context, c telebot.Context, user *domain.User) error {
 	sheetUrl := strings.TrimSpace(c.Text())
+	slog.InfoContext(ctx, "Получена ссылка на Google Таблицу:",
+		slog.String("url", sheetUrl),
+	)
 
 	// Extracting unique sheet id from url
 	sheetIDRegex := regexp.MustCompile(`/d/([a-zA-Z0-9_-]+)`)
 	matches := sheetIDRegex.FindStringSubmatch(sheetUrl)
-
 	if len(matches) < 2 {
-		return c.Send("⚠️ Не удалось извлечь ID таблицы. Попробуй другую ссылку.")
+		return domain.ErrInvalidSheetURL
 	}
 
 	sheetID := matches[1]
@@ -28,30 +32,34 @@ func (r *Router) handleSheetURLInput(c telebot.Context) error {
 	waitMsg, _ := r.bot.Send(c.Chat(), "⏳ Проверяю доступ к таблице...")
 
 	// Checking the bot is able to operate with the table
+	slog.InfoContext(ctx, "Проверяем доступ к Google Таблице",
+		slog.String("sheet_id", sheetID),
+	)
+
 	err := r.sheetsService.ValidateAccess(ctx, sheetID)
 	if waitMsg != nil {
 		_ = r.bot.Delete(waitMsg)
 	}
 
 	if err != nil {
-		errorMsg := fmt.Sprintf(
-			"⚠️ *Не удалось получить доступ к таблице!*\n\n"+
-				"Причина: %s\n\n"+
-				"Убедись, что ты добавил сервисный аккаунт с правами *Редактора*:\n`%s`\n\n"+
-				"После этого отправь ссылку еще раз.",
-			err.Error(),
-			r.cfg.GoogleServiceAccountEmail,
-		)
-		return c.Send(errorMsg, telebot.ModeMarkdown)
+		return domain.ErrSheetAccessDenied
 	}
 
-	// Getting user from the db
-	user, err := r.userRepo.GetByTelegramId(ctx, senderId)
-	if err != nil {
-		return c.Send("⚠️ Ошибка при получении профиля. Попробуй позже.")
-	}
-	if user == nil {
-		return c.Send("⚠️ Профиль не найден. Начни с команды /start.")
+	slog.InfoContext(ctx, "Доступ к Google Таблице успешно подтвержден",
+		slog.String("sheet_id", sheetID),
+	)
+
+	// Setup user categories in the connected sheet if available
+	if user.CategoriesCache != "" {
+		var categories []string
+		if err := json.Unmarshal([]byte(user.CategoriesCache), &categories); err != nil {
+			return fmt.Errorf("failed to unmarshal categories: %w", err)
+		}
+		if len(categories) > 0 {
+			if err := r.sheetsService.SetupUserCategories(ctx, sheetID, "Дашборд", categories); err != nil {
+				return err
+			}
+		}
 	}
 
 	// Saving sheet id to the db
@@ -59,14 +67,14 @@ func (r *Router) handleSheetURLInput(c telebot.Context) error {
 	user.State = domain.StateReady
 
 	if err := r.userRepo.Upsert(ctx, user); err != nil {
-		return c.Send("⚠️ Ошибка при сохранении таблицы. Попробуй позже.")
+		return err
 	}
 
 	// Sending welcome message
 	welcomeMessage := fmt.Sprintf(
 		"✅ *Отлично! Твоя персональная финансовая система готова к работе.*\n\n"+
 			"🔗 *Таблица:* %s\n\n"+
-			" теперь ты можешь отправлять мне свои финансовые операции в свободной форме:\n"+
+			"Теперь ты можешь отправлять мне свои финансовые операции в свободной форме:\n"+
 			"\nПримеры:\n\n"+
 			"• *\"Купил кофе за 300 рублей\"*\n"+
 			"• *\"Обед 850\"*\n"+

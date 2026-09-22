@@ -2,8 +2,6 @@ package telegram
 
 import (
 	"context"
-	"em-finance-bot/internal/service/ai"
-	"em-finance-bot/internal/service/sheets"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,19 +9,29 @@ import (
 	"strings"
 	"time"
 
+	"em-finance-bot/internal/domain"
+	"em-finance-bot/internal/service/ai"
+	"em-finance-bot/internal/service/sheets"
+
 	"gopkg.in/telebot.v3"
 )
 
-func (r *Router) handleMoneyOperation(c telebot.Context) error {
-	ctx := context.Background()
-	senderId := c.Sender().ID
+func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, user *domain.User) error {
+	// Guard against unconfigured sheet
+	if user.SpreadsheetID == "" {
+		return domain.ErrSheetNotConfigured
+	}
 
-	// Detect the message type: text or speach and get message text
+	// Detect the message type: text or voice and get message text
 	var inputText string
 
 	if c.Message().Voice == nil {
 		inputText = strings.TrimSpace(c.Text())
+		slog.InfoContext(ctx, "Получена финансовая операция (текст)",
+			slog.String("text", inputText),
+		)
 	} else {
+		slog.InfoContext(ctx, "Получена финансовая операция (голосовое)")
 		waitVoiceMsg, _ := r.bot.Send(c.Chat(), "🎙 Слушаю голосовое...")
 
 		// Downloading audio file from tg
@@ -32,10 +40,8 @@ func (r *Router) handleMoneyOperation(c telebot.Context) error {
 			if waitVoiceMsg != nil {
 				_ = r.bot.Delete(waitVoiceMsg)
 			}
-
-			return c.Send("⚠️ Не удалось загрузить голосовое сообщение. Попробуй ещё раз.")
+			return domain.ErrVoiceDownloadFailed
 		}
-
 		defer voiceFile.Close()
 
 		voiceBytes, err := io.ReadAll(voiceFile)
@@ -43,83 +49,70 @@ func (r *Router) handleMoneyOperation(c telebot.Context) error {
 			if waitVoiceMsg != nil {
 				_ = r.bot.Delete(waitVoiceMsg)
 			}
-			return c.Send("⚠️ Ошибка при чтении аудиофайла.")
+			return domain.ErrVoiceDownloadFailed
 		}
 
 		// Getting transcription with Gemini
+		slog.InfoContext(ctx, "Отправляем голосовое на расшифровку в Gemini")
 		transcription, err := r.aiService.TranscribeVoice(ctx, voiceBytes)
 		if waitVoiceMsg != nil {
 			_ = r.bot.Delete(waitVoiceMsg)
 		}
 
 		if err != nil || strings.TrimSpace(transcription) == "" {
-			return c.Send("⚠️ Не удалось разобрать слова в голосовом. Попробуй написать текстом.")
+			return domain.ErrVoiceTranscriptionFailed
 		}
 
 		inputText = strings.TrimSpace(transcription)
+		slog.InfoContext(ctx, "Голос успешно расшифрован",
+			slog.String("text", inputText),
+		)
 	}
 
 	if inputText == "" {
-		return c.Send("⚠️ Не удалось распознать сообщение. Попробуй ещё раз.")
-	}
-
-	// Getting user data from the db
-	user, err := r.userRepo.GetByTelegramId(ctx, senderId)
-	if err != nil {
-		return c.Send("⚠️ Ошибка при получении данных пользователя")
+		return domain.ErrEmptyTransaction
 	}
 
 	// Deserializing user expenses categories
 	var categories []string
-	if err := json.Unmarshal([]byte(user.CategoriesCache), &categories); err != nil {
-		return c.Send("⚠️ Ошибка при обработке данных по категориям пользователя")
+	if user.CategoriesCache != "" {
+		if err := json.Unmarshal([]byte(user.CategoriesCache), &categories); err != nil {
+			slog.WarnContext(ctx, "Не удалось распарсить категории пользователя из кэша", slog.Any("error", err))
+		}
 	}
 
 	waitMsg, _ := r.bot.Send(c.Chat(), "⏳ Обрабатываю операцию...")
 
 	// Pass all information to ai service
-	transaction, err := r.aiService.ParsedTransaction(ctx, inputText, categories, user.Currency, user.Timezone)
-	if err != nil || !transaction.IsValid {
-		fmt.Println("ERROR PARSING TRANSACTION", err)
-		return c.Send("⚠️ Не удалось распознать операцию или сумму.\nПример: `Такси 1200` или `Зарплата 350000`", telebot.ModeMarkdown)
-	}
+	slog.InfoContext(ctx, "Отправляем запрос в gemini для распознавания операции",
+		slog.String("text", inputText),
+	)
 
+	transaction, err := r.aiService.ParsedTransaction(ctx, inputText, categories, user.Currency, user.Timezone)
 	if waitMsg != nil {
 		_ = r.bot.Delete(waitMsg)
 	}
 
-	// Handling transaction clarification
-	// if transaction.NeedsClarification && len(transaction.SuggestedCategories) > 0 {
-	// 	// Сохраняем черновик транзакции во временное поле пользователя
-	// 	txBytes, _ := json.Marshal(transaction)
-	// 	user.PendingTransaction = string(txBytes)
-	// 	user.State = domain.StateAwaitingCategoryClarification
-	// 	_ = r.userRepo.Upsert(ctx, user)
+	if err != nil || !transaction.IsValid {
+		return domain.ErrInvalidTransaction
+	}
 
-	// 	// Формируем кнопки с предложенными вариантами
-	// 	clarifyMarkup := &telebot.ReplyMarkup{}
-	// 	var rows []telebot.Row
-	// 	for _, cat := range transaction.SuggestedCategories {
-	// 		btn := clarifyMarkup.Data(cat, "set_cat", cat)
-	// 		rows = append(rows, clarifyMarkup.Row(btn))
-	// 	}
-	// 	clarifyMarkup.Inline(rows...)
-
-	// 	prompt := fmt.Sprintf(
-	// 		"🤔 Нашел операцию: *%s* на сумму `%.2f %s`, но сомневаюсь в категории.\n\nВыбери подходящую категорию:",
-	// 		transaction.Description,
-	// 		transaction.Amount,
-	// 		user.Currency,
-	// 	)
-	// 	return c.Send(prompt, clarifyMarkup, telebot.ModeMarkdown)
-	// }
+	slog.InfoContext(ctx, "Операция успешно распознана",
+		slog.String("type", transaction.Type),
+		slog.Float64("amount", transaction.Amount),
+		slog.String("category", transaction.Category),
+		slog.String("description", transaction.Description),
+	)
 
 	// Saving operation to Google sheets
-	parsedDate, err := ai.ParseTransactionDate(transaction.Date, user.Timezone)
+	parsedDate, err := ai.ParseTransactionDate(ctx, transaction.Date, user.Timezone)
 	if err != nil {
-		slog.Error("Не удалось разобрать дату транзакции", "дата", transaction.Date, "таймзона", user.Timezone, "ошибка", err)
-		return c.Send("⚠️ Не удалось распознать дату операции. Попробуй ещё раз.")
+		return domain.ErrInvalidTransactionDate
 	}
+
+	slog.InfoContext(ctx, "Сохраняем операцию в Google Таблицу",
+		slog.String("spreadsheet_id", user.SpreadsheetID),
+	)
 
 	if err = r.sheetsService.SaveTransaction(ctx, user.SpreadsheetID, &sheets.Transaction{
 		UserID:      user.TelegramID,
@@ -130,12 +123,11 @@ func (r *Router) handleMoneyOperation(c telebot.Context) error {
 		Date:        parsedDate,
 		CreatedAt:   time.Now(),
 	}); err != nil {
-		slog.Error("Не удалось сохранить операцию в Google Таблицу", "ошибка", err, "user_id", user.TelegramID)
-		return c.Send("⚠️ Произошла ошибка при записи в таблицу. Попробуй позже.")
+		return fmt.Errorf("failed to save transaction to sheets: %w", err)
 	}
 
 	var textResponse string
-	if transaction.Type == string(sheets.TypeIncome) { //TODO: fix type
+	if transaction.Type == string(sheets.TypeIncome) {
 		textResponse = fmt.Sprintf("✅ <b>Доход записан!</b>\n\n💰 Сумма: <b>%.2f</b>\n📝 Описание: %s\n📅 Дата: %s",
 			transaction.Amount,
 			transaction.Description,

@@ -11,7 +11,7 @@ import (
 	"google.golang.org/genai"
 )
 
-func ParseTransactionDate(raw string, userTZ string) (time.Time, error) {
+func ParseTransactionDate(ctx context.Context, raw string, userTZ string) (time.Time, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return time.Time{}, fmt.Errorf("пустая дата транзакции")
@@ -19,7 +19,10 @@ func ParseTransactionDate(raw string, userTZ string) (time.Time, error) {
 
 	loc, err := time.LoadLocation(userTZ)
 	if err != nil {
-		slog.Warn("Не удалось загрузить таймзону пользователя, используется UTC", "таймзона", userTZ, "ошибка", err)
+		slog.WarnContext(ctx, "Не удалось загрузить таймзону пользователя, используется UTC",
+			slog.String("timezone", userTZ),
+			slog.Any("error", err),
+		)
 		loc = time.UTC
 	}
 
@@ -125,7 +128,10 @@ func (s *GeminiService) ParsedTransaction(
 ) (*ParsedTransaction, error) {
 	loc, err := time.LoadLocation(userTZ)
 	if err != nil {
-		slog.Warn("Не удалось загрузить таймзону пользователя, используется UTC", "таймзона", userTZ, "ошибка", err)
+		slog.WarnContext(ctx, "Не удалось загрузить таймзону пользователя, используется UTC",
+			slog.String("timezone", userTZ),
+			slog.Any("error", err),
+		)
 		loc = time.UTC
 	}
 	now := time.Now().In(loc)

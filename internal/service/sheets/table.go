@@ -81,7 +81,7 @@ func (s *SheetsService) SetupUserCategories(
 	// 1. Получаем метаданные таблицы для точного определения имени и ID листа
 	ss, err := s.srv.Spreadsheets.Get(spreadsheetID).Context(ctx).Do()
 	if err != nil {
-		slog.Error("Не удалось получить таблицу", "ошибка", err)
+		slog.ErrorContext(ctx, "Не удалось получить таблицу", slog.Any("error", err))
 		return fmt.Errorf("ошибка доступа к таблице: %w", err)
 	}
 
@@ -141,7 +141,10 @@ func (s *SheetsService) SetupUserCategories(
 		Context(ctx).
 		Do()
 	if err != nil {
-		slog.Error("Не удалось записать категории и формулы", "диапазон", targetRange, "ошибка", err)
+		slog.ErrorContext(ctx, "Не удалось записать категории и формулы",
+			slog.String("range", targetRange),
+			slog.Any("error", err),
+		)
 		return fmt.Errorf("ошибка записи строк: %w", err)
 	}
 
@@ -181,12 +184,12 @@ func (s *SheetsService) SetupUserCategories(
 
 	_, err = s.srv.Spreadsheets.BatchUpdate(spreadsheetID, batchReq).Context(ctx).Do()
 	if err != nil {
-		slog.Warn("Не удалось обновить выпадающий список в F", "ошибка", err)
+		slog.WarnContext(ctx, "Не удалось обновить выпадающий список в F", slog.Any("error", err))
 	}
 
-	slog.Info("Категории, формулы сумм и выпадающие списки успешно настроены",
-		"лист", actualSheetName,
-		"строк", totalCats,
+	slog.InfoContext(ctx, "Категории, формулы сумм и выпадающие списки успешно настроены",
+		slog.String("sheet", actualSheetName),
+		slog.Int("total_rows", totalCats),
 	)
 
 	return nil
@@ -232,13 +235,6 @@ func (s *SheetsService) SaveTransaction(ctx context.Context, spreadsheetID strin
 		Values: [][]interface{}{rowValues},
 	}
 
-	slog.Debug("Сохранение транзакции в Google Таблицу",
-		"таблица_id", spreadsheetID,
-		"тип", displayType,
-		"сумма", transaction.Amount,
-		"категория", finalCategory,
-	)
-
 	// Append находит первую свободную строку после шапки журнала (строка 3) и вставляет данные
 	_, err := s.srv.Spreadsheets.Values.Append(spreadsheetID, targetRange, valueRange).
 		ValueInputOption("USER_ENTERED").
@@ -246,18 +242,18 @@ func (s *SheetsService) SaveTransaction(ctx context.Context, spreadsheetID strin
 		Context(ctx).
 		Do()
 	if err != nil {
-		slog.Error("Ошибка при сохранении транзакции в таблицу",
-			"ошибка", err,
-			"таблица_id", spreadsheetID,
-			"диапазон", targetRange,
+		slog.ErrorContext(ctx, "Ошибка при сохранении транзакции в таблицу",
+			slog.Any("error", err),
+			slog.String("spreadsheet_id", spreadsheetID),
+			slog.String("range", targetRange),
 		)
 		return fmt.Errorf("ошибка добавления строки в таблицу: %w", err)
 	}
 
-	slog.Info("Транзакция успешно записана в журнал",
-		"тип", displayType,
-		"сумма", transaction.Amount,
-		"категория", finalCategory,
+	slog.InfoContext(ctx, "Транзакция успешно записана в журнал",
+		slog.String("type", displayType),
+		slog.Float64("amount", transaction.Amount),
+		slog.String("category", finalCategory),
 	)
 
 	return nil

@@ -14,7 +14,7 @@ import (
 func (r *Router) handleError(ctx context.Context, c telebot.Context, err error) error {
 	// Ignoring request cancelation by user or due to timeout
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		slog.DebugContext(ctx, "Запрос отменен клиентом или прерван по таймауту", slog.Any("error", err))
+		slog.InfoContext(ctx, "Запрос отменен клиентом или прерван по таймауту", slog.Any("error", err))
 		return nil
 	}
 
@@ -64,6 +64,82 @@ func (r *Router) handleError(ctx context.Context, c telebot.Context, err error) 
 		)
 
 		return c.Send("Не удалось распознать город 😔\nПроверь корректность названия и попробуй написать ещё раз:")
+	case errors.Is(err, domain.ErrInvalidCategories):
+		slog.WarnContext(ctx, "Некорректный список категорий",
+			slog.Int64("user_id", userID),
+			slog.String("username", username),
+		)
+
+		return c.Send("Пожалуйста, отправь список категорий через запятую. Например: Продукты, Кафе, Транспорт, Развлечения")
+	case errors.Is(err, domain.ErrParsingCategories):
+		slog.WarnContext(ctx, "Ошибка при обработке категорий в Gemini",
+			slog.Int64("user_id", userID),
+			slog.String("username", username),
+		)
+
+		return c.Send("Не удалось распознать категории 😔\nПопробуй написать ещё раз через запятую:")
+	case errors.Is(err, domain.ErrInvalidSheetURL):
+		slog.WarnContext(ctx, "Некорректная ссылка на Google Таблицу",
+			slog.Int64("user_id", userID),
+			slog.String("username", username),
+		)
+
+		return c.Send("⚠️ Не удалось извлечь ID таблицы. Убедись, что отправляешь корректную ссылку на Google Таблицу:")
+	case errors.Is(err, domain.ErrSheetAccessDenied):
+		slog.WarnContext(ctx, "Ошибка доступа к Google Таблице",
+			slog.Int64("user_id", userID),
+			slog.String("username", username),
+		)
+
+		msg := fmt.Sprintf(
+			"⚠️ *Не удалось получить доступ к таблице!*\n\n"+
+				"Убедись, что ты добавил сервисный аккаунт с правами *Редактора*:\n`%s`\n\n"+
+				"После этого отправь ссылку еще раз.",
+			r.cfg.GoogleServiceAccountEmail,
+		)
+		return c.Send(msg, telebot.ModeMarkdown)
+	case errors.Is(err, domain.ErrSheetNotConfigured):
+		slog.WarnContext(ctx, "Google Таблица не настроена",
+			slog.Int64("user_id", userID),
+			slog.String("username", username),
+		)
+
+		return c.Send("⚠️ Google Таблица ещё не подключена. Пожалуйста, заверши настройку с помощью команды /start.")
+	case errors.Is(err, domain.ErrVoiceDownloadFailed):
+		slog.WarnContext(ctx, "Не удалось загрузить голосовое сообщение",
+			slog.Int64("user_id", userID),
+			slog.String("username", username),
+		)
+
+		return c.Send("⚠️ Не удалось загрузить голосовое сообщение. Попробуй ещё раз или отправь текстом.")
+	case errors.Is(err, domain.ErrVoiceTranscriptionFailed):
+		slog.WarnContext(ctx, "Не удалось расшифровать голосовое сообщение",
+			slog.Int64("user_id", userID),
+			slog.String("username", username),
+		)
+
+		return c.Send("⚠️ Не удалось разобрать слова в голосовом сообщении. Попробуй записать чётче или написать текстом.")
+	case errors.Is(err, domain.ErrEmptyTransaction):
+		slog.WarnContext(ctx, "Пустой текст финансовой операции",
+			slog.Int64("user_id", userID),
+			slog.String("username", username),
+		)
+
+		return c.Send("⚠️ Не удалось распознать сообщение. Попробуй ещё раз.")
+	case errors.Is(err, domain.ErrInvalidTransaction):
+		slog.WarnContext(ctx, "Не удалось распознать финансовую операцию",
+			slog.Int64("user_id", userID),
+			slog.String("username", username),
+		)
+
+		return c.Send("⚠️ Не удалось распознать операцию или сумму.\nПример: `Такси 1200` или `Зарплата 350000`", telebot.ModeMarkdown)
+	case errors.Is(err, domain.ErrInvalidTransactionDate):
+		slog.WarnContext(ctx, "Ошибка разбора даты операции",
+			slog.Int64("user_id", userID),
+			slog.String("username", username),
+		)
+
+		return c.Send("⚠️ Не удалось определить дату операции. Попробуй ещё раз.")
 	}
 
 	// Handling technical errors
@@ -95,12 +171,14 @@ func (r *Router) handleError(ctx context.Context, c telebot.Context, err error) 
 
 func CatchUnhandledErrors(err error, c telebot.Context) {
 	traceID := "none"
+	ctx := context.Background()
 	if c != nil {
-		if ctx, ok := c.Get(ContextKey).(context.Context); ok {
+		if reqCtx, ok := c.Get(ContextKey).(context.Context); ok {
+			ctx = reqCtx
 			traceID = trace.FromContext(ctx)
 		}
 	}
-	slog.Error("Unhandled Telegram update error",
+	slog.ErrorContext(ctx, "Unhandled Telegram update error",
 		slog.String("trace_id", traceID),
 		slog.Any("error", err),
 	)

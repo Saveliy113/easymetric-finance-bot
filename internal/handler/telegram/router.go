@@ -80,12 +80,16 @@ func (r *Router) handleIncomingMessage(c telebot.Context) error {
 	case domain.StateAwaitingCity:
 		return r.handleCityInput(ctx, c, user)
 	case domain.StateAwaitingCategories:
-		return r.handleUserCustomCategories(c)
+		return r.handleUserCustomCategories(ctx, c, user)
 	case domain.StateAwaitingSheetURL:
-		return r.handleSheetURLInput(c)
+		return r.handleSheetURLInput(ctx, c, user)
 	case domain.StateReady:
-		return r.handleMoneyOperation(c)
+		return r.handleMoneyOperation(ctx, c, user)
 	default:
+		slog.WarnContext(ctx, "Неизвестное состояние пользователя",
+			slog.Int64("user_id", sender.ID),
+			slog.String("state", string(user.State)),
+		)
 		return c.Send("⚠️ Неизвестное состояние профиля. Пожалуйста, начни настройку с команды /start.")
 	}
 }
