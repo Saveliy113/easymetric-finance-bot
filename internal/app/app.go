@@ -9,6 +9,7 @@ import (
 
 	"em-finance-bot/config"
 	httpHandler "em-finance-bot/internal/handler/http"
+	"em-finance-bot/internal/handler/telegram"
 	tgHandler "em-finance-bot/internal/handler/telegram"
 	db "em-finance-bot/internal/repository/sqlite"
 	ai "em-finance-bot/internal/service/ai"
@@ -46,6 +47,7 @@ func Run(cfg *config.Config) {
 	bot, err := telebot.NewBot(telebot.Settings{
 		Token:   cfg.BotToken,
 		Offline: true,
+		OnError: telegram.CatchUnhandledErrors,
 	})
 	if err != nil {
 		log.Fatalf("Error initializing Telegram bot: %v", err)

@@ -9,13 +9,12 @@ import (
 	"gopkg.in/telebot.v3"
 )
 
-func (r *Router) handleCityInput(c telebot.Context, user *domain.User) error {
-	ctx := context.Background()
+func (r *Router) handleCityInput(ctx context.Context, c telebot.Context, user *domain.User) error {
 	inputCity := strings.TrimSpace(c.Text())
 
 	// Empty strings or too short city names guard
 	if len(inputCity) < 2 {
-		return c.Send("Пожалуйста, напиши корректное название города:")
+		return domain.ErrInvalidCity
 	}
 
 	waitMsg, _ := r.bot.Send(c.Chat(), "⏳ Определяю часовой пояс и валюту...")
@@ -27,10 +26,7 @@ func (r *Router) handleCityInput(c telebot.Context, user *domain.User) error {
 	}
 
 	if err != nil || !locationInfo.IsValid {
-		return c.Send(
-			"Не удалось распознать город 😔\nПопробуй написать название ещё раз (например: *Алматы*, *Москва*, *Тбилиси*):",
-			telebot.ModeMarkdown,
-		)
+		return domain.ErrParsingCity
 	}
 
 	// Updating user location data and state
@@ -39,7 +35,7 @@ func (r *Router) handleCityInput(c telebot.Context, user *domain.User) error {
 	user.State = domain.StateAwaitingCategories
 
 	if err := r.userRepo.Upsert(ctx, user); err != nil {
-		return c.Send("⚠️ Ошибка при сохранении данных в базу. Попробуй ещё раз.")
+		return err
 	}
 
 	// 1. Первое сообщение: подтверждение распознанных данных

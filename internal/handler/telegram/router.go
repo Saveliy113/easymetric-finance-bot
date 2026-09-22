@@ -2,14 +2,13 @@ package telegram
 
 import (
 	"context"
+	"log/slog"
 
 	"em-finance-bot/config"
 	"em-finance-bot/internal/domain"
 	db "em-finance-bot/internal/repository/sqlite"
 	"em-finance-bot/internal/service/ai"
 	"em-finance-bot/internal/service/sheets"
-	"em-finance-bot/pkg/idgen"
-	"em-finance-bot/pkg/trace"
 
 	"gopkg.in/telebot.v3"
 )
@@ -35,6 +34,9 @@ func NewRouter(bot *telebot.Bot, cfg *config.Config, userRepo *db.UserRepository
 
 // Telegram comands and events registration
 func (r *Router) Register() {
+	// Register global telemetry & error middleware
+	r.bot.Use(r.TelemetryMiddleware())
+
 	// Start comand handler (/start)
 	r.bot.Handle("/start", r.handleGreeting)
 
@@ -50,21 +52,33 @@ func (r *Router) Register() {
 }
 
 func (r *Router) handleIncomingMessage(c telebot.Context) error {
-	// Creating request trace id and creating context with it
-	traceId := idgen.Short()
-	ctx := trace.WithId(context.Background(), traceId)
+	// Getting request context with trace id
+	ctx := c.Get(ContextKey).(context.Context)
 	sender := c.Sender()
 
+	slog.InfoContext(ctx, "💬 Входящее сообщение",
+		slog.Int64("user_id", sender.ID),
+	)
+
 	// Getting user from the db
+	slog.DebugContext(ctx, "Ищем пользователя в базе данных...",
+		slog.Int64("user_id", sender.ID),
+	)
+
 	user, err := r.userRepo.GetByTelegramId(ctx, sender.ID)
 	if err != nil {
-		return r.handleError(ctx, c, err)
+		return err
 	}
+
+	slog.InfoContext(ctx, "Пользователь найден",
+		slog.Int64("user_id", sender.ID),
+		slog.String("state", string(user.State)),
+	)
 
 	// State based routing
 	switch user.State {
 	case domain.StateAwaitingCity:
-		return r.handleCityInput(c, user)
+		return r.handleCityInput(ctx, c, user)
 	case domain.StateAwaitingCategories:
 		return r.handleUserCustomCategories(c)
 	case domain.StateAwaitingSheetURL:
