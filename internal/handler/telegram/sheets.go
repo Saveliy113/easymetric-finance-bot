@@ -17,10 +17,12 @@ import (
 func (r *Router) handleSheetURLInput(ctx context.Context, c telebot.Context, user *domain.User) error {
 	sheetUrl := strings.TrimSpace(c.Text())
 	slog.InfoContext(ctx, "Получена ссылка на Google Таблицу:",
+		slog.Int64("user_id", user.TelegramID),
 		slog.String("url", sheetUrl),
 	)
 
 	// Extracting unique sheet id from url
+	slog.InfoContext(ctx, "Извлекаем уникальный id таблицы из ссылки")
 	sheetIDRegex := regexp.MustCompile(`/d/([a-zA-Z0-9_-]+)`)
 	matches := sheetIDRegex.FindStringSubmatch(sheetUrl)
 	if len(matches) < 2 {
@@ -33,6 +35,7 @@ func (r *Router) handleSheetURLInput(ctx context.Context, c telebot.Context, use
 
 	// Checking the bot is able to operate with the table
 	slog.InfoContext(ctx, "Проверяем доступ к Google Таблице",
+		slog.Int64("user_id", user.TelegramID),
 		slog.String("sheet_id", sheetID),
 	)
 
@@ -42,10 +45,11 @@ func (r *Router) handleSheetURLInput(ctx context.Context, c telebot.Context, use
 	}
 
 	if err != nil {
-		return domain.ErrSheetAccessDenied
+		return err
 	}
 
 	slog.InfoContext(ctx, "Доступ к Google Таблице успешно подтвержден",
+		slog.Int64("user_id", user.TelegramID),
 		slog.String("sheet_id", sheetID),
 	)
 
@@ -63,12 +67,22 @@ func (r *Router) handleSheetURLInput(ctx context.Context, c telebot.Context, use
 	}
 
 	// Saving sheet id to the db
+	slog.InfoContext(ctx, "Сохраняем id таблицы в БД",
+		slog.Int64("user_id", user.TelegramID),
+		slog.String("sheet_id", sheetID),
+	)
+
 	user.SpreadsheetID = sheetID
 	user.State = domain.StateReady
 
 	if err := r.userRepo.Upsert(ctx, user); err != nil {
 		return err
 	}
+
+	slog.InfoContext(ctx, "Id таблицы успешно сохранен в БД",
+		slog.Int64("user_id", user.TelegramID),
+		slog.String("sheet_id", sheetID),
+	)
 
 	// Sending welcome message
 	welcomeMessage := fmt.Sprintf(

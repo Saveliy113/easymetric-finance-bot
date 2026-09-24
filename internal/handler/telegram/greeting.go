@@ -58,6 +58,11 @@ func (r *Router) handleStartConfiguration(c telebot.Context) error {
 		State:      domain.StateAwaitingCity,
 	}
 
+	slog.InfoContext(ctx, "Создаем/сбрасываем профиль пользователя в БД",
+		slog.Int64("user_id", sender.ID),
+		slog.String("state", string(user.State)),
+	)
+
 	if err := r.userRepo.Upsert(ctx, user); err != nil {
 		return err
 	}

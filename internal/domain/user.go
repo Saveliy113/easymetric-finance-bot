@@ -1,7 +1,6 @@
 package domain
 
 import (
-	"errors"
 	"time"
 )
 
@@ -27,7 +26,3 @@ type User struct {
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
-
-var (
-	ErrUserNotFound = errors.New("user not found")
-)

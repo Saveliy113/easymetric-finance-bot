@@ -60,10 +60,10 @@ func (r *UserRepository) GetByTelegramId(ctx context.Context, telegramId int64) 
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("[ UserRepository.GetByTelegramId ] %w (tg_id: %d)", domain.ErrUserNotFound, telegramId)
+			return nil, domain.ErrUserNotFound
 		}
 
-		return nil, fmt.Errorf("[ UserRepository.GetByTelegramId ] Error scanning user row (tg_id: %d): %w", telegramId, err)
+		return nil, fmt.Errorf("error scanning user row: %w", err)
 	}
 
 	// Map the state string to the UserState type
@@ -78,7 +78,7 @@ func (r *UserRepository) GetByTelegramId(ctx context.Context, telegramId int64) 
 
 	if categoriesJSON.Valid && categoriesJSON.String != "" {
 		if err := json.Unmarshal([]byte(categoriesJSON.String), &u.CategoriesCache); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal categories (tg_id: %d): %w", telegramId, err)
+			return nil, fmt.Errorf("failed to unmarshal categories: %w", err)
 		}
 	}
 

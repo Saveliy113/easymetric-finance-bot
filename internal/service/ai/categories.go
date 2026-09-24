@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"google.golang.org/genai"
@@ -40,6 +41,8 @@ type CategoriesResponse struct {
 }
 
 func (s *GeminiService) ParseCategories(ctx context.Context, categories string) (*CategoriesResponse, error) {
+	slog.InfoContext(ctx, "Отправляем запрос в Gemini для валидации категорий", slog.String("categories", categories))
+
 	prompt := fmt.Sprintf(categoriesParsingPrompt, categories)
 
 	config := &genai.GenerateContentConfig{
@@ -65,6 +68,11 @@ func (s *GeminiService) ParseCategories(ctx context.Context, categories string) 
 	if err := json.Unmarshal([]byte(rawText), &info); err != nil {
 		return nil, fmt.Errorf("failed to decode json: %w (raw: %s)", err, rawText)
 	}
+
+	slog.InfoContext(ctx, "Категории успешно проанализированы Gemini",
+		slog.Bool("is_valid", info.IsValid),
+		slog.Any("categories", info.Categories),
+	)
 
 	return &info, nil
 }

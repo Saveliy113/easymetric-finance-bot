@@ -61,7 +61,7 @@ func (r *Router) handleIncomingMessage(c telebot.Context) error {
 	)
 
 	// Getting user from the db
-	slog.DebugContext(ctx, "Ищем пользователя в базе данных...",
+	slog.InfoContext(ctx, "Ищем пользователя в базе данных...",
 		slog.Int64("user_id", sender.ID),
 	)
 
@@ -85,11 +85,7 @@ func (r *Router) handleIncomingMessage(c telebot.Context) error {
 		return r.handleSheetURLInput(ctx, c, user)
 	case domain.StateReady:
 		return r.handleMoneyOperation(ctx, c, user)
-	default:
-		slog.WarnContext(ctx, "Неизвестное состояние пользователя",
-			slog.Int64("user_id", sender.ID),
-			slog.String("state", string(user.State)),
-		)
-		return c.Send("⚠️ Неизвестное состояние профиля. Пожалуйста, начни настройку с команды /start.")
 	}
+
+	return nil
 }

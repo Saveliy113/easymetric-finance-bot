@@ -45,9 +45,7 @@ func (r *Router) handleCategoriesStep(ctx context.Context, c telebot.Context) er
 		"• Нажми кнопку ниже, чтобы применить этот набор\n" +
 		"• Либо отправь свой список через запятую (например: _Еда, Авто, Дом, Хобби_)"
 
-	return c.Send(categoriesPromptText,
-		markup,
-		telebot.ModeMarkdown)
+	return c.Send(categoriesPromptText, markup, telebot.ModeMarkdown)
 }
 
 func (r *Router) handleUseDefaultCategories(c telebot.Context) error {
@@ -94,6 +92,7 @@ func (r *Router) handleUseDefaultCategories(c telebot.Context) error {
 func (r *Router) handleUserCustomCategories(ctx context.Context, c telebot.Context, user *domain.User) error {
 	inputCategories := strings.TrimSpace(c.Text())
 	slog.InfoContext(ctx, "Пользовательские категории:",
+		slog.Int64("user_id", user.TelegramID),
 		slog.String("categories", inputCategories),
 	)
 
@@ -104,6 +103,7 @@ func (r *Router) handleUserCustomCategories(ctx context.Context, c telebot.Conte
 	waitMsg, _ := r.bot.Send(c.Chat(), "⏳ Анализирую категории трат...")
 
 	slog.InfoContext(ctx, "Отправляем запрос в gemini для анализа категорий",
+		slog.Int64("user_id", user.TelegramID),
 		slog.String("categories", inputCategories),
 	)
 
@@ -117,6 +117,7 @@ func (r *Router) handleUserCustomCategories(ctx context.Context, c telebot.Conte
 	}
 
 	slog.InfoContext(ctx, "Получены категории от gemini",
+		slog.Int64("user_id", user.TelegramID),
 		slog.Any("categories", categoriesInfo.Categories),
 	)
 

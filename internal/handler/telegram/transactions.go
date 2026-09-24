@@ -28,10 +28,13 @@ func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, us
 	if c.Message().Voice == nil {
 		inputText = strings.TrimSpace(c.Text())
 		slog.InfoContext(ctx, "Получена финансовая операция (текст)",
+			slog.Int64("user_id", user.TelegramID),
 			slog.String("text", inputText),
 		)
 	} else {
-		slog.InfoContext(ctx, "Получена финансовая операция (голосовое)")
+		slog.InfoContext(ctx, "Получена финансовая операция (голосовое)",
+			slog.Int64("user_id", user.TelegramID),
+		)
 		waitVoiceMsg, _ := r.bot.Send(c.Chat(), "🎙 Слушаю голосовое...")
 
 		// Downloading audio file from tg
@@ -53,7 +56,9 @@ func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, us
 		}
 
 		// Getting transcription with Gemini
-		slog.InfoContext(ctx, "Отправляем голосовое на расшифровку в Gemini")
+		slog.InfoContext(ctx, "Отправляем голосовое на расшифровку в Gemini",
+			slog.Int64("user_id", user.TelegramID),
+		)
 		transcription, err := r.aiService.TranscribeVoice(ctx, voiceBytes)
 		if waitVoiceMsg != nil {
 			_ = r.bot.Delete(waitVoiceMsg)
@@ -65,6 +70,7 @@ func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, us
 
 		inputText = strings.TrimSpace(transcription)
 		slog.InfoContext(ctx, "Голос успешно расшифрован",
+			slog.Int64("user_id", user.TelegramID),
 			slog.String("text", inputText),
 		)
 	}
@@ -77,7 +83,10 @@ func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, us
 	var categories []string
 	if user.CategoriesCache != "" {
 		if err := json.Unmarshal([]byte(user.CategoriesCache), &categories); err != nil {
-			slog.WarnContext(ctx, "Не удалось распарсить категории пользователя из кэша", slog.Any("error", err))
+			slog.InfoContext(ctx, "Не удалось распарсить категории пользователя из кэша",
+				slog.Int64("user_id", user.TelegramID),
+				slog.Any("error", err),
+			)
 		}
 	}
 
@@ -85,19 +94,25 @@ func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, us
 
 	// Pass all information to ai service
 	slog.InfoContext(ctx, "Отправляем запрос в gemini для распознавания операции",
+		slog.Int64("user_id", user.TelegramID),
 		slog.String("text", inputText),
 	)
 
-	transaction, err := r.aiService.ParsedTransaction(ctx, inputText, categories, user.Currency, user.Timezone)
+	transaction, err := r.aiService.ParseTransaction(ctx, inputText, categories, user.Currency, user.Timezone)
 	if waitMsg != nil {
 		_ = r.bot.Delete(waitMsg)
 	}
 
-	if err != nil || !transaction.IsValid {
+	if err != nil {
+		return err
+	}
+
+	if !transaction.IsValid {
 		return domain.ErrInvalidTransaction
 	}
 
 	slog.InfoContext(ctx, "Операция успешно распознана",
+		slog.Int64("user_id", user.TelegramID),
 		slog.String("type", transaction.Type),
 		slog.Float64("amount", transaction.Amount),
 		slog.String("category", transaction.Category),
@@ -107,23 +122,24 @@ func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, us
 	// Saving operation to Google sheets
 	parsedDate, err := ai.ParseTransactionDate(ctx, transaction.Date, user.Timezone)
 	if err != nil {
-		return domain.ErrInvalidTransactionDate
+		return err
 	}
 
 	slog.InfoContext(ctx, "Сохраняем операцию в Google Таблицу",
+		slog.Int64("user_id", user.TelegramID),
 		slog.String("spreadsheet_id", user.SpreadsheetID),
 	)
 
 	if err = r.sheetsService.SaveTransaction(ctx, user.SpreadsheetID, &sheets.Transaction{
 		UserID:      user.TelegramID,
-		Type:        sheets.TransactionType(transaction.Type), // "expense" или "income"
+		Type:        sheets.TransactionType(transaction.Type),
 		Amount:      transaction.Amount,
 		Category:    transaction.Category,
 		Description: transaction.Description,
 		Date:        parsedDate,
 		CreatedAt:   time.Now(),
 	}); err != nil {
-		return fmt.Errorf("failed to save transaction to sheets: %w", err)
+		return err
 	}
 
 	var textResponse string

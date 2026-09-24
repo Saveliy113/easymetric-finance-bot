@@ -8,22 +8,20 @@ import (
 	"strings"
 	"time"
 
+	"em-finance-bot/internal/domain"
+
 	"google.golang.org/genai"
 )
 
 func ParseTransactionDate(ctx context.Context, raw string, userTZ string) (time.Time, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return time.Time{}, fmt.Errorf("пустая дата транзакции")
+		return time.Time{}, domain.ErrInvalidTransactionDate
 	}
 
 	loc, err := time.LoadLocation(userTZ)
 	if err != nil {
-		slog.WarnContext(ctx, "Не удалось загрузить таймзону пользователя, используется UTC",
-			slog.String("timezone", userTZ),
-			slog.Any("error", err),
-		)
-		loc = time.UTC
+		return time.Time{}, fmt.Errorf("failed to load user timezone %q: %w", userTZ, err)
 	}
 
 	if parsed, err := time.Parse(time.RFC3339, raw); err == nil {
@@ -42,10 +40,10 @@ func ParseTransactionDate(ctx context.Context, raw string, userTZ string) (time.
 		}
 	}
 
-	return time.Time{}, fmt.Errorf("не удалось разобрать дату %q", raw)
+	return time.Time{}, domain.ErrInvalidTransactionDate
 }
 
-type ParsedTransaction struct {
+type ParseTransaction struct {
 	IsValid             bool     `json:"is_valid"`
 	Type                string   `json:"type"` // "expense" или "income"
 	Amount              float64  `json:"amount"`
@@ -97,8 +95,10 @@ const parseTransactionPrompt = `
 
 func (s *GeminiService) TranscribeVoice(ctx context.Context, data []byte) (string, error) {
 	if len(data) == 0 {
-		return "", fmt.Errorf("Не удалось расщифровать голосовое сообщение - сообщение пустое")
+		return "", fmt.Errorf("voice message data is empty")
 	}
+
+	slog.InfoContext(ctx, "Отправляем аудио в Gemini для транскрипции", slog.Int("bytes_len", len(data)))
 
 	result, err := s.client.Models.GenerateContent(
 		ctx,
@@ -108,31 +108,29 @@ func (s *GeminiService) TranscribeVoice(ctx context.Context, data []byte) (strin
 	)
 
 	if err != nil {
-		return "", fmt.Errorf("Ошибка при распозновании голосового сообщения: %w", err)
+		return "", fmt.Errorf("error recognizing voice message: %w", err)
 	}
 
 	transcription := strings.TrimSpace(result.Text())
 	if transcription == "" {
-		return "", fmt.Errorf("Сообщение пустое после попытки расшифровки. Попробуйте еще раз")
+		return "", fmt.Errorf("empty transcription from gemini")
 	}
+
+	slog.InfoContext(ctx, "Голосовое сообщение успешно расшифровано Gemini", slog.String("transcription", transcription))
 
 	return transcription, nil
 }
 
-func (s *GeminiService) ParsedTransaction(
+func (s *GeminiService) ParseTransaction(
 	ctx context.Context,
 	rawText string,
 	categories []string,
 	userCurrency string,
 	userTZ string,
-) (*ParsedTransaction, error) {
+) (*ParseTransaction, error) {
 	loc, err := time.LoadLocation(userTZ)
 	if err != nil {
-		slog.WarnContext(ctx, "Не удалось загрузить таймзону пользователя, используется UTC",
-			slog.String("timezone", userTZ),
-			slog.Any("error", err),
-		)
-		loc = time.UTC
+		return nil, fmt.Errorf("failed to load user timezone %q: %w", userTZ, err)
 	}
 	now := time.Now().In(loc)
 
@@ -180,15 +178,28 @@ func (s *GeminiService) ParsedTransaction(
 		},
 	}
 
+	slog.InfoContext(ctx, "Отправляем запрос в Gemini для парсинга транзакции",
+		slog.String("rawText", rawText),
+		slog.String("currency", userCurrency),
+		slog.String("timezone", userTZ),
+	)
+
 	result, err := s.client.Models.GenerateContent(ctx, "gemini-3.5-flash-lite", genai.Text(prompt), config)
 	if err != nil {
-		return nil, fmt.Errorf("ошибка анализа транзакции: %w", err)
+		return nil, fmt.Errorf("error analyzing transaction: %w", err)
 	}
 
-	var transaction ParsedTransaction
+	var transaction ParseTransaction
 	if err := json.Unmarshal([]byte(result.Text()), &transaction); err != nil {
-		return nil, fmt.Errorf("ошибка разбора JSON ответа: %w", err)
+		return nil, fmt.Errorf("error decoding json response: %w", err)
 	}
+
+	slog.InfoContext(ctx, "Транзакция успешно проанализирована Gemini",
+		slog.Bool("is_valid", transaction.IsValid),
+		slog.String("type", transaction.Type),
+		slog.Float64("amount", transaction.Amount),
+		slog.String("category", transaction.Category),
+	)
 
 	return &transaction, nil
 }
