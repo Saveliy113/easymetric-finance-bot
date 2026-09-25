@@ -76,7 +76,7 @@ func (s *SheetsService) SetupUserCategories(
 	spreadsheetID string,
 	sheetName string,
 	categories []string,
-) error { 
+) error {
 	if len(categories) == 0 {
 		return domain.ErrInvalidCategories
 	}
@@ -112,11 +112,11 @@ func (s *SheetsService) SetupUserCategories(
 
 		// Summ formula:
 		// Calculate sum from column I, where:
-		// - category (column G) = current category A{row}
 		// - type (column H) = "Расход"
+		// - category (column G) = current category A{row}
 		// - date (column F) in period of current month from B3 and B4
 		formulaSum := fmt.Sprintf(
-			`=SUMIFS(I:I, G:G, A%d, H:H, "Расход", F:F, ">="&DATE($B$3,$B$4,1), F:F, "<"&EDATE(DATE($B$3,$B$4,1),1))`,
+			`=SUMIFS(I:I, H:H, "Расход", G:G, A%d, F:F, ">="&DATE($B$3,$B$4,1), F:F, "<"&EDATE(DATE($B$3,$B$4,1),1))`,
 			row,
 		)
 
@@ -203,8 +203,8 @@ func (s *SheetsService) SaveTransaction(ctx context.Context, spreadsheetID strin
 		return fmt.Errorf("transaction cannot be empty")
 	}
 
-	// Formating date for column F: YYYY-MM-DD
-	dateStr := transaction.Date.Format("2006-01-02")
+	// Formating date for column F: YYYY-MM-DD HH:MM
+	dateStr := transaction.Date.Format("2006-01-02 15:04:05")
 
 	// Determining display type and category
 	var displayType string
@@ -221,7 +221,7 @@ func (s *SheetsService) SaveTransaction(ctx context.Context, spreadsheetID strin
 	// Formating row values according columns: E (ID), F (Дата), G (Категория), H (Тип), I (Сумма), J (Описание)
 	rowValues := []interface{}{
 		transaction.ID,          // E: ID
-		dateStr,                 // F: Date (e.g., 2026-08-12)
+		dateStr,                 // F: Date (e.g., 2026-08-12 15:04:05)
 		finalCategory,           // G: Category ("Доход" or expense category)
 		displayType,             // H: Type ("Расход" / "Доход")
 		transaction.Amount,      // I: Numerical amount without currency (e.g., 12500)
@@ -229,24 +229,24 @@ func (s *SheetsService) SaveTransaction(ctx context.Context, spreadsheetID strin
 	}
 
 	// Range for adding transaction to the logbook on the "Dashboard" sheet
-	targetRange := "'Дашборд'!E:J"
+	targetRange := "'Дашборд'!E3:J"
 
 	valueRange := &sheets.ValueRange{
 		Values: [][]interface{}{rowValues},
 	}
 
 	slog.InfoContext(ctx, "Добавляем строку транзакции в таблицу",
+		slog.Int64("id", transaction.ID),
 		slog.String("spreadsheet_id", spreadsheetID),
 		slog.String("range", targetRange),
-		slog.Int64("id", transaction.ID),
-		slog.Float64("amount", transaction.Amount),
 		slog.String("category", finalCategory),
+		slog.Float64("amount", transaction.Amount),
 	)
 
-	// Append finds the first free row after the logbook header (row 3) and inserts the data
+	// Append finds the first free row in E3:J and writes data without shifting/inserting rows across the sheet
 	_, err := s.srv.Spreadsheets.Values.Append(spreadsheetID, targetRange, valueRange).
 		ValueInputOption("USER_ENTERED").
-		InsertDataOption("INSERT_ROWS").
+		InsertDataOption("OVERWRITE").
 		Context(ctx).
 		Do()
 	if err != nil {

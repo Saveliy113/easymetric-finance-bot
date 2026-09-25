@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"em-finance-bot/internal/domain"
-	"em-finance-bot/internal/service/ai"
 	"em-finance-bot/internal/service/sheets"
 
 	"gopkg.in/telebot.v3"
@@ -119,12 +118,6 @@ func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, us
 		slog.String("description", transaction.Description),
 	)
 
-	// Saving operation to Google sheets
-	parsedDate, err := ai.ParseTransactionDate(ctx, transaction.Date, user.Timezone)
-	if err != nil {
-		return err
-	}
-
 	nextTxID, err := r.userRepo.IncrementLastTransactionID(ctx, user.TelegramID)
 	if err != nil {
 		return fmt.Errorf("error incrementing transaction id: %w", err)
@@ -143,7 +136,7 @@ func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, us
 		Amount:      transaction.Amount,
 		Category:    transaction.Category,
 		Description: transaction.Description,
-		Date:        parsedDate,
+		Date:        transaction.Date,
 		CreatedAt:   time.Now(),
 	}); err != nil {
 		return err
@@ -155,7 +148,7 @@ func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, us
 			nextTxID,
 			transaction.Amount,
 			transaction.Description,
-			parsedDate.Format("02.01.2006"),
+			transaction.Date.Format("02.01.2006 15:04"),
 		)
 	} else {
 		textResponse = fmt.Sprintf("✅ <b>Расход записан!</b>\n\n🆔 ID: <b>#%d</b>\n💸 Сумма: <b>%.2f</b>\n📁 Категория: <b>%s</b>\n📝 Описание: %s\n📅 Дата: %s",
@@ -163,7 +156,7 @@ func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, us
 			transaction.Amount,
 			transaction.Category,
 			transaction.Description,
-			parsedDate.Format("02.01.2006"),
+			transaction.Date.Format("02.01.2006 15:04"),
 		)
 	}
 

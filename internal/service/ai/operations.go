@@ -8,50 +8,18 @@ import (
 	"strings"
 	"time"
 
-	"em-finance-bot/internal/domain"
-
 	"google.golang.org/genai"
 )
 
-func ParseTransactionDate(ctx context.Context, raw string, userTZ string) (time.Time, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return time.Time{}, domain.ErrInvalidTransactionDate
-	}
-
-	loc, err := time.LoadLocation(userTZ)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("failed to load user timezone %q: %w", userTZ, err)
-	}
-
-	if parsed, err := time.Parse(time.RFC3339, raw); err == nil {
-		return parsed, nil
-	}
-
-	for _, layout := range []string{"2006-01-02T15:04:05-07:00", "2006-01-02T15:04:05Z07:00"} {
-		if parsed, err := time.Parse(layout, raw); err == nil {
-			return parsed, nil
-		}
-	}
-
-	for _, layout := range []string{"2006-01-02T15:04:05", "2006-01-02 15:04:05", "2006-01-02"} {
-		if parsed, err := time.ParseInLocation(layout, raw, loc); err == nil {
-			return parsed, nil
-		}
-	}
-
-	return time.Time{}, domain.ErrInvalidTransactionDate
-}
-
-type ParseTransaction struct {
-	IsValid             bool     `json:"is_valid"`
-	Type                string   `json:"type"` // "expense" или "income"
-	Amount              float64  `json:"amount"`
-	Category            string   `json:"category"`
-	Description         string   `json:"description"`
-	Date                string   `json:"date"`
-	NeedsClarification  bool     `json:"needs_clarification"`
-	SuggestedCategories []string `json:"suggested_categories"`
+type ParsedTransaction struct {
+	IsValid             bool      `json:"is_valid"`
+	Type                string    `json:"type"`
+	Amount              float64   `json:"amount"`
+	Category            string    `json:"category"`
+	Description         string    `json:"description"`
+	Date                time.Time `json:"date"`
+	NeedsClarification  bool      `json:"needs_clarification"`
+	SuggestedCategories []string  `json:"suggested_categories"`
 }
 
 const audioTranscriptionPropmt = `
@@ -142,7 +110,7 @@ func (s *GeminiService) ParseTransaction(
 	categories []string,
 	userCurrency string,
 	userTZ string,
-) (*ParseTransaction, error) {
+) (*ParsedTransaction, error) {
 	loc, err := time.LoadLocation(userTZ)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load user timezone %q: %w", userTZ, err)
@@ -173,7 +141,7 @@ func (s *GeminiService) ParseTransaction(
 				"amount":              {Type: genai.TypeNumber},
 				"category":            {Type: genai.TypeString},
 				"description":         {Type: genai.TypeString},
-				"date":                {Type: genai.TypeString},
+				"date":                {Type: genai.TypeString, Format: "date-time"},
 				"needs_clarification": {Type: genai.TypeBoolean},
 				"suggested_categories": {
 					Type:  genai.TypeArray,
@@ -204,7 +172,7 @@ func (s *GeminiService) ParseTransaction(
 		return nil, fmt.Errorf("error analyzing transaction: %w", err)
 	}
 
-	var transaction ParseTransaction
+	var transaction ParsedTransaction
 	if err := json.Unmarshal([]byte(result.Text()), &transaction); err != nil {
 		return nil, fmt.Errorf("error decoding json response: %w", err)
 	}

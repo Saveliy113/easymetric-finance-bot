@@ -156,14 +156,19 @@ func (r *Router) handleSheetStep(ctx context.Context, c telebot.Context) error {
 	)
 
 	nextStepText := fmt.Sprintf(
-		"✅ Категории успешно подключены!\n\n"+
-			"📍 *Шаг 3 из 3: Подключение Google Таблицы*\n\n"+
-			"1. [Создай копию шаблона таблицы EM Personal Finances](%s)\n"+
-			"2. Выдай доступ на редактирование сервисному аккаунту бота:\n`%s`\n\n"+
+		"✅ <b>Категории успешно подключены!</b>\n\n"+
+			"📍 <b>Шаг 3 из 3: Подключение Google Таблицы</b>\n\n"+
+			"1. <a href=\"%s\">Создай копию шаблона таблицы EM Personal Finances</a>\n"+
+			"2. Выдай доступ на редактирование сервисному аккаунту бота:\n<code>%s</code>\n\n"+
 			"3. Отправь ссылку на свою готовую копию таблицы в ответном сообщении:",
 		r.cfg.TemplateSheetURL,
 		r.cfg.GoogleServiceAccountEmail,
 	)
 
-	return c.Send(nextStepText, telebot.ModeMarkdown)
+	photo := &telebot.Photo{
+		File:    telebot.FromDisk("assets/images/em_fin_template_access.png"),
+		Caption: nextStepText,
+	}
+
+	return c.Send(photo, telebot.ModeHTML)
 }
