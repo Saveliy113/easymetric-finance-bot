@@ -43,7 +43,7 @@ func LoadConfig() *Config {
 
 	port := os.Getenv("PORT")
 	if port == "" {
-		log.Println("Port is not set in .env file, setting default port :7070")
+		log.Printf("Port is not set in %s file, setting default port :7070", envFile)
 		port = "7070" // Default port if not set
 	}
 

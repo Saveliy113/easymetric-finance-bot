@@ -17,11 +17,12 @@ const (
 type User struct {
 	ID              int
 	TelegramID      int64
+	SpreadsheetID   string
+	LastTransactionID int
 	Username        string
 	State           UserState
 	Timezone        string
 	Currency        string
-	SpreadsheetID   string
 	CategoriesCache string
 	CreatedAt       time.Time
 	UpdatedAt       time.Time

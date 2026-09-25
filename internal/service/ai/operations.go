@@ -103,7 +103,22 @@ func (s *GeminiService) TranscribeVoice(ctx context.Context, data []byte) (strin
 	result, err := s.client.Models.GenerateContent(
 		ctx,
 		"gemini-3.5-flash-lite",
-		genai.Text(audioTranscriptionPropmt),
+		[]*genai.Content{
+			{
+				Role: "user",
+				Parts: []*genai.Part{
+					{
+						Text: audioTranscriptionPropmt,
+					},
+					{
+						InlineData: &genai.Blob{
+							MIMEType: "audio/ogg",
+							Data:     data,
+						},
+					},
+				},
+			},
+		},
 		nil,
 	)
 

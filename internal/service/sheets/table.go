@@ -111,9 +111,12 @@ func (s *SheetsService) SetupUserCategories(
 		row := startRow + i
 
 		// Summ formula:
-		// Calculate sum from H:H, where category = A{row}, type = "Расход", and Month/Year = YYYY-MM from filter B3 and B4
+		// Calculate sum from column I, where:
+		// - category (column G) = current category A{row}
+		// - type (column H) = "Расход"
+		// - date (column F) in period of current month from B3 and B4
 		formulaSum := fmt.Sprintf(
-			`=SUMIFS(H:H, F:F, A%d, G:G, "Расход", I:I, TEXT(DATE($B$3, $B$4, 1), "yyyy-mm"))`,
+			`=SUMIFS(I:I, G:G, A%d, H:H, "Расход", F:F, ">="&DATE($B$3,$B$4,1), F:F, "<"&EDATE(DATE($B$3,$B$4,1),1))`,
 			row,
 		)
 
@@ -148,7 +151,7 @@ func (s *SheetsService) SetupUserCategories(
 		return fmt.Errorf("error while inserting rows: %w", err)
 	}
 
-	// Updating data validation list in column F
+	// Updating data validation list in column G (Category)
 	// List contains "Доход" first + all user categories
 	dropdownItems := append([]string{"Доход"}, categories...)
 	var conditionValues []*sheets.ConditionValue
@@ -166,8 +169,8 @@ func (s *SheetsService) SetupUserCategories(
 						SheetId:          targetSheetID,
 						StartRowIndex:    2,
 						EndRowIndex:      10000000,
-						StartColumnIndex: 5,
-						EndColumnIndex:   6,
+						StartColumnIndex: 6,
+						EndColumnIndex:   7,
 					},
 					Rule: &sheets.DataValidationRule{
 						Condition: &sheets.BooleanCondition{
@@ -200,7 +203,7 @@ func (s *SheetsService) SaveTransaction(ctx context.Context, spreadsheetID strin
 		return fmt.Errorf("transaction cannot be empty")
 	}
 
-	// Formating date for column E: YYYY-MM-DD
+	// Formating date for column F: YYYY-MM-DD
 	dateStr := transaction.Date.Format("2006-01-02")
 
 	// Determining display type and category
@@ -215,17 +218,18 @@ func (s *SheetsService) SaveTransaction(ctx context.Context, spreadsheetID strin
 		finalCategory = transaction.Category
 	}
 
-	// Formating row values according columns: E, F, G, H, I
+	// Formating row values according columns: E (ID), F (Дата), G (Категория), H (Тип), I (Сумма), J (Описание)
 	rowValues := []interface{}{
-		dateStr,                 // E: Date (e.g., 2026-08-12)
-		finalCategory,           // F: Category ("Доход" or expense category)
-		displayType,             // G: Type ("Расход" / "Доход")
-		transaction.Amount,      // H: Numerical amount without currency (e.g., 12500)
-		transaction.Description, // I: Description
+		transaction.ID,          // E: ID
+		dateStr,                 // F: Date (e.g., 2026-08-12)
+		finalCategory,           // G: Category ("Доход" or expense category)
+		displayType,             // H: Type ("Расход" / "Доход")
+		transaction.Amount,      // I: Numerical amount without currency (e.g., 12500)
+		transaction.Description, // J: Description
 	}
 
 	// Range for adding transaction to the logbook on the "Dashboard" sheet
-	targetRange := "'Дашборд'!E:I"
+	targetRange := "'Дашборд'!E:J"
 
 	valueRange := &sheets.ValueRange{
 		Values: [][]interface{}{rowValues},
@@ -234,6 +238,7 @@ func (s *SheetsService) SaveTransaction(ctx context.Context, spreadsheetID strin
 	slog.InfoContext(ctx, "Добавляем строку транзакции в таблицу",
 		slog.String("spreadsheet_id", spreadsheetID),
 		slog.String("range", targetRange),
+		slog.Int64("id", transaction.ID),
 		slog.Float64("amount", transaction.Amount),
 		slog.String("category", finalCategory),
 	)
@@ -249,6 +254,7 @@ func (s *SheetsService) SaveTransaction(ctx context.Context, spreadsheetID strin
 	}
 
 	slog.InfoContext(ctx, "Транзакция успешно записана в журнал",
+		slog.Int64("id", transaction.ID),
 		slog.String("type", displayType),
 		slog.Float64("amount", transaction.Amount),
 		slog.String("category", finalCategory),

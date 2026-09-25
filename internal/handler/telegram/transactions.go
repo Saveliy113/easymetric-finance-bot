@@ -125,12 +125,19 @@ func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, us
 		return err
 	}
 
+	nextTxID, err := r.userRepo.IncrementLastTransactionID(ctx, user.TelegramID)
+	if err != nil {
+		return fmt.Errorf("error incrementing transaction id: %w", err)
+	}
+
 	slog.InfoContext(ctx, "Сохраняем операцию в Google Таблицу",
 		slog.Int64("user_id", user.TelegramID),
 		slog.String("spreadsheet_id", user.SpreadsheetID),
+		slog.Int("transaction_id", nextTxID),
 	)
 
 	if err = r.sheetsService.SaveTransaction(ctx, user.SpreadsheetID, &sheets.Transaction{
+		ID:          int64(nextTxID),
 		UserID:      user.TelegramID,
 		Type:        sheets.TransactionType(transaction.Type),
 		Amount:      transaction.Amount,
@@ -144,13 +151,15 @@ func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, us
 
 	var textResponse string
 	if transaction.Type == string(sheets.TypeIncome) {
-		textResponse = fmt.Sprintf("✅ <b>Доход записан!</b>\n\n💰 Сумма: <b>%.2f</b>\n📝 Описание: %s\n📅 Дата: %s",
+		textResponse = fmt.Sprintf("✅ <b>Доход записан!</b>\n\n🆔 ID: <b>#%d</b>\n💰 Сумма: <b>%.2f</b>\n📝 Описание: %s\n📅 Дата: %s",
+			nextTxID,
 			transaction.Amount,
 			transaction.Description,
 			parsedDate.Format("02.01.2006"),
 		)
 	} else {
-		textResponse = fmt.Sprintf("✅ <b>Расход записан!</b>\n\n💸 Сумма: <b>%.2f</b>\n📁 Категория: <b>%s</b>\n📝 Описание: %s\n📅 Дата: %s",
+		textResponse = fmt.Sprintf("✅ <b>Расход записан!</b>\n\n🆔 ID: <b>#%d</b>\n💸 Сумма: <b>%.2f</b>\n📁 Категория: <b>%s</b>\n📝 Описание: %s\n📅 Дата: %s",
+			nextTxID,
 			transaction.Amount,
 			transaction.Category,
 			transaction.Description,
