@@ -49,6 +49,10 @@ func (r *Router) Register() {
 	// Text and voice messages handler
 	r.bot.Handle(telebot.OnText, r.handleIncomingMessage)
 	r.bot.Handle(telebot.OnVoice, r.handleIncomingMessage)
+
+	// Transaction category clarification handler
+	r.bot.Handle(&telebot.InlineButton{Unique: btnIDSelectClarifiedCategory}, r.handleSelectClarifiedCategory)
+	r.bot.Handle(&telebot.InlineButton{Unique: btnIDCancelTransactionClarification}, r.handleCancelTransactionClarification)
 }
 
 func (r *Router) handleIncomingMessage(c telebot.Context) error {

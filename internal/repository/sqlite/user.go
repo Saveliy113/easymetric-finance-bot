@@ -24,6 +24,7 @@ func (r *UserRepository) GetByTelegramId(ctx context.Context, telegramId int64) 
 			telegram_id as telegramId,
 			spreadsheet_id as spreadsheetId,
 			last_transaction_id as lastTransactionId,
+			pending_transaction as pendingTransaction,
 			username,
 			state,
 			timezone,
@@ -40,6 +41,7 @@ func (r *UserRepository) GetByTelegramId(ctx context.Context, telegramId int64) 
 		u              domain.User
 		spreadsheetID  sql.NullString
 		lastTxID       sql.NullInt64
+		pendingTx      sql.NullString
 		username       sql.NullString
 		categoriesJSON sql.NullString
 		stateStr       string
@@ -52,6 +54,7 @@ func (r *UserRepository) GetByTelegramId(ctx context.Context, telegramId int64) 
 		&u.TelegramID,
 		&spreadsheetID,
 		&lastTxID,
+		&pendingTx,
 		&username,
 		&stateStr,
 		&timezone,
@@ -77,6 +80,10 @@ func (r *UserRepository) GetByTelegramId(ctx context.Context, telegramId int64) 
 
 	if lastTxID.Valid {
 		u.LastTransactionID = int(lastTxID.Int64)
+	}
+
+	if pendingTx.Valid {
+		u.PendingTransaction = pendingTx.String
 	}
 
 	if username.Valid {
@@ -110,6 +117,12 @@ func (r *UserRepository) Upsert(ctx context.Context, user *domain.User) error {
 		}
 		categoriesJSON = sql.NullString{String: string(categoriesBytes), Valid: true}
 	}
+
+	// Convert pending transaction to JSON for storage
+	var pendingTxVal sql.NullString
+	if user.PendingTransaction != "" {
+		pendingTxVal = sql.NullString{String: user.PendingTransaction, Valid: true}
+	}	
 
 	// Handling username and spreadsheet_id as sql.NullString to avoid inserting empty strings
 	var usernameVal sql.NullString
@@ -147,9 +160,10 @@ func (r *UserRepository) Upsert(ctx context.Context, user *domain.User) error {
 			currency, 
 			spreadsheet_id, 
 			last_transaction_id,
+			pending_transaction,
 			categories_cache, 
 			updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(telegram_id) DO UPDATE SET
 			username            = excluded.username,
 			state               = excluded.state,
@@ -158,6 +172,7 @@ func (r *UserRepository) Upsert(ctx context.Context, user *domain.User) error {
 			spreadsheet_id      = COALESCE(excluded.spreadsheet_id, users.spreadsheet_id),
 			last_transaction_id = COALESCE(excluded.last_transaction_id, users.last_transaction_id, 0),
 			categories_cache    = COALESCE(excluded.categories_cache, users.categories_cache),
+			pending_transaction = COALESCE(excluded.pending_transaction, users.pending_transaction, ""),
 			updated_at          = CURRENT_TIMESTAMP;
 	`
 
@@ -169,6 +184,7 @@ func (r *UserRepository) Upsert(ctx context.Context, user *domain.User) error {
 		currencyVal,
 		spreadsheetIDVal,
 		lastTxIDVal,
+		pendingTxVal,
 		categoriesJSON,
 	)
 

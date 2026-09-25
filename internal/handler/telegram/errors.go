@@ -105,6 +105,11 @@ func (r *Router) getErrorDescriptors() []errorDescriptor {
 			logMsg:    "Ошибка разбора даты операции",
 			renderMsg: func(r *Router) string { return "⚠️ Не удалось определить дату операции. Попробуй ещё раз." },
 		},
+		{
+			target:    domain.ErrTransactionClarificationExpired,
+			logMsg:    "Истекло время ожидания уточнения транзакции",
+			renderMsg: func(r *Router) string { return "⚠️ Истекло время ожидания уточнения транзакции. Отправь операцию заново." },
+		},
 	}
 }
 

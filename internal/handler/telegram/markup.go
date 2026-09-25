@@ -3,9 +3,11 @@ package telegram
 import "gopkg.in/telebot.v3"
 
 const (
-	btnIDStartConfig = "start_configuration"
-	btnIDDefaultCat  = "use_default_categories"
-	btnIDCustomCat   = "custom_categories"
+	btnIDStartConfig                    = "start_configuration"
+	btnIDDefaultCat                     = "use_default_categories"
+	btnIDCustomCat                      = "custom_categories"
+	btnIDSelectClarifiedCategory        = "select_clarified_category"
+	btnIDCancelTransactionClarification = "cancel_transaction_clarification"
 )
 
 func (r *Router) startConfigMarkup() *telebot.ReplyMarkup {

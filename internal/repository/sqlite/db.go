@@ -34,6 +34,7 @@ func createTables() {
 			telegram_id 	 INTEGER NOT NULL UNIQUE,
 			spreadsheet_id   TEXT,
 			last_transaction_id INTEGER,
+			pending_transaction TEXT,
 			username         TEXT,
     		state            TEXT NOT NULL DEFAULT 'AWAITING_CITY',
 			timezone         TEXT,
