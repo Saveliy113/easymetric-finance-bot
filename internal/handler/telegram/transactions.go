@@ -118,6 +118,32 @@ func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, us
 		slog.String("description", transaction.Description),
 	)
 
+	slog.InfoContext(
+		ctx, "Требуется уточнение категории транзации",
+		slog.Bool("needs_clarification", transaction.NeedsClarification),
+		slog.Float64("amount", transaction.Amount),
+		slog.String("description", transaction.Description),
+	)
+
+	// If category clarification is needed,
+	// sending category candidates buttons
+	if transaction.NeedsClarification {
+		if len(transaction.SuggestedCategories) > 0 {
+			slog.InfoContext(
+				ctx,
+				"Отправляем варианты категорий",
+			)
+
+			return r.sendCategorySuggestions(ctx, c, transaction, user)
+		} else {
+			slog.InfoContext(
+				ctx,
+				"Отправляем форму для ручного ввода категории",
+			)
+			return r.sendManualCategorySelection(ctx, c, transaction, user)
+		}
+	}
+
 	nextTxID, err := r.userRepo.IncrementLastTransactionID(ctx, user.TelegramID)
 	if err != nil {
 		return fmt.Errorf("error incrementing transaction id: %w", err)

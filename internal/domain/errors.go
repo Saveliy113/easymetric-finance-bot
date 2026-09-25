@@ -22,9 +22,10 @@ var (
 	ErrSheetNotConfigured = errors.New("google sheet is not configured")
 
 	// Transaction & Voice errors
-	ErrVoiceDownloadFailed      = errors.New("failed to download voice message")
-	ErrVoiceTranscriptionFailed = errors.New("failed to transcribe voice message")
-	ErrEmptyTransaction         = errors.New("empty transaction text")
-	ErrInvalidTransaction       = errors.New("failed to parse transaction or amount")
-	ErrInvalidTransactionDate   = errors.New("failed to parse transaction date")
+	ErrVoiceDownloadFailed             = errors.New("failed to download voice message")
+	ErrVoiceTranscriptionFailed        = errors.New("failed to transcribe voice message")
+	ErrEmptyTransaction                = errors.New("empty transaction text")
+	ErrInvalidTransaction              = errors.New("failed to parse transaction or amount")
+	ErrInvalidTransactionDate          = errors.New("failed to parse transaction date")
+	ErrTransactionClarificationExpired = errors.New("transaction clarification has expired")
 )

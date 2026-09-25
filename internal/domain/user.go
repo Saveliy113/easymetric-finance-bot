@@ -12,6 +12,8 @@ const (
 	StateAwaitingCategories UserState = "AWAITING_CATEGORIES"
 	StateAwaitingSheetURL   UserState = "AWAITING_SHEET_URL"
 	StateReady              UserState = "READY"
+
+	StateAwaitingCategoryClarification UserState = "AWAITING_CATEGORY_CLARIFICATION"
 )
 
 type User struct {
@@ -19,6 +21,7 @@ type User struct {
 	TelegramID      int64
 	SpreadsheetID   string
 	LastTransactionID int
+	PendingTransaction string
 	Username        string
 	State           UserState
 	Timezone        string
