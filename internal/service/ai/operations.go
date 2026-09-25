@@ -11,46 +11,15 @@ import (
 	"google.golang.org/genai"
 )
 
-func ParseTransactionDate(raw string, userTZ string) (time.Time, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return time.Time{}, fmt.Errorf("пустая дата транзакции")
-	}
-
-	loc, err := time.LoadLocation(userTZ)
-	if err != nil {
-		slog.Warn("Не удалось загрузить таймзону пользователя, используется UTC", "таймзона", userTZ, "ошибка", err)
-		loc = time.UTC
-	}
-
-	if parsed, err := time.Parse(time.RFC3339, raw); err == nil {
-		return parsed, nil
-	}
-
-	for _, layout := range []string{"2006-01-02T15:04:05-07:00", "2006-01-02T15:04:05Z07:00"} {
-		if parsed, err := time.Parse(layout, raw); err == nil {
-			return parsed, nil
-		}
-	}
-
-	for _, layout := range []string{"2006-01-02T15:04:05", "2006-01-02 15:04:05", "2006-01-02"} {
-		if parsed, err := time.ParseInLocation(layout, raw, loc); err == nil {
-			return parsed, nil
-		}
-	}
-
-	return time.Time{}, fmt.Errorf("не удалось разобрать дату %q", raw)
-}
-
 type ParsedTransaction struct {
-	IsValid             bool     `json:"is_valid"`
-	Type                string   `json:"type"` // "expense" или "income"
-	Amount              float64  `json:"amount"`
-	Category            string   `json:"category"`
-	Description         string   `json:"description"`
-	Date                string   `json:"date"`
-	NeedsClarification  bool     `json:"needs_clarification"`
-	SuggestedCategories []string `json:"suggested_categories"`
+	IsValid             bool      `json:"is_valid"`
+	Type                string    `json:"type"`
+	Amount              float64   `json:"amount"`
+	Category            string    `json:"category"`
+	Description         string    `json:"description"`
+	Date                time.Time `json:"date"`
+	NeedsClarification  bool      `json:"needs_clarification"`
+	SuggestedCategories []string  `json:"suggested_categories"`
 }
 
 const audioTranscriptionPropmt = `
@@ -94,29 +63,48 @@ const parseTransactionPrompt = `
 
 func (s *GeminiService) TranscribeVoice(ctx context.Context, data []byte) (string, error) {
 	if len(data) == 0 {
-		return "", fmt.Errorf("Не удалось расщифровать голосовое сообщение - сообщение пустое")
+		return "", fmt.Errorf("voice message data is empty")
 	}
+
+	slog.InfoContext(ctx, "Отправляем аудио в Gemini для транскрипции", slog.Int("bytes_len", len(data)))
 
 	result, err := s.client.Models.GenerateContent(
 		ctx,
 		"gemini-3.5-flash-lite",
-		genai.Text(audioTranscriptionPropmt),
+		[]*genai.Content{
+			{
+				Role: "user",
+				Parts: []*genai.Part{
+					{
+						Text: audioTranscriptionPropmt,
+					},
+					{
+						InlineData: &genai.Blob{
+							MIMEType: "audio/ogg",
+							Data:     data,
+						},
+					},
+				},
+			},
+		},
 		nil,
 	)
 
 	if err != nil {
-		return "", fmt.Errorf("Ошибка при распозновании голосового сообщения: %w", err)
+		return "", fmt.Errorf("error recognizing voice message: %w", err)
 	}
 
 	transcription := strings.TrimSpace(result.Text())
 	if transcription == "" {
-		return "", fmt.Errorf("Сообщение пустое после попытки расшифровки. Попробуйте еще раз")
+		return "", fmt.Errorf("empty transcription from gemini")
 	}
+
+	slog.InfoContext(ctx, "Голосовое сообщение успешно расшифровано Gemini", slog.String("transcription", transcription))
 
 	return transcription, nil
 }
 
-func (s *GeminiService) ParsedTransaction(
+func (s *GeminiService) ParseTransaction(
 	ctx context.Context,
 	rawText string,
 	categories []string,
@@ -125,8 +113,7 @@ func (s *GeminiService) ParsedTransaction(
 ) (*ParsedTransaction, error) {
 	loc, err := time.LoadLocation(userTZ)
 	if err != nil {
-		slog.Warn("Не удалось загрузить таймзону пользователя, используется UTC", "таймзона", userTZ, "ошибка", err)
-		loc = time.UTC
+		return nil, fmt.Errorf("failed to load user timezone %q: %w", userTZ, err)
 	}
 	now := time.Now().In(loc)
 
@@ -154,7 +141,7 @@ func (s *GeminiService) ParsedTransaction(
 				"amount":              {Type: genai.TypeNumber},
 				"category":            {Type: genai.TypeString},
 				"description":         {Type: genai.TypeString},
-				"date":                {Type: genai.TypeString},
+				"date":                {Type: genai.TypeString, Format: "date-time"},
 				"needs_clarification": {Type: genai.TypeBoolean},
 				"suggested_categories": {
 					Type:  genai.TypeArray,
@@ -174,15 +161,28 @@ func (s *GeminiService) ParsedTransaction(
 		},
 	}
 
+	slog.InfoContext(ctx, "Отправляем запрос в Gemini для парсинга транзакции",
+		slog.String("rawText", rawText),
+		slog.String("currency", userCurrency),
+		slog.String("timezone", userTZ),
+	)
+
 	result, err := s.client.Models.GenerateContent(ctx, "gemini-3.5-flash-lite", genai.Text(prompt), config)
 	if err != nil {
-		return nil, fmt.Errorf("ошибка анализа транзакции: %w", err)
+		return nil, fmt.Errorf("error analyzing transaction: %w", err)
 	}
 
 	var transaction ParsedTransaction
 	if err := json.Unmarshal([]byte(result.Text()), &transaction); err != nil {
-		return nil, fmt.Errorf("ошибка разбора JSON ответа: %w", err)
+		return nil, fmt.Errorf("error decoding json response: %w", err)
 	}
+
+	slog.InfoContext(ctx, "Транзакция успешно проанализирована Gemini",
+		slog.Bool("is_valid", transaction.IsValid),
+		slog.String("type", transaction.Type),
+		slog.Float64("amount", transaction.Amount),
+		slog.String("category", transaction.Category),
+	)
 
 	return &transaction, nil
 }

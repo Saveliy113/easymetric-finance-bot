@@ -2,6 +2,7 @@ package sheets
 
 import (
 	"context"
+	"em-finance-bot/internal/domain"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -46,6 +47,8 @@ func NewSheetService(ctx context.Context, credentialsFilePath string) *SheetsSer
 }
 
 func (s *SheetsService) ValidateAccess(ctx context.Context, spreadsheetID string) error {
+	slog.InfoContext(ctx, "Проверяем доступ к таблице", slog.String("spreadsheetID", spreadsheetID))
+
 	// Trying to get table metadata
 	call := s.srv.Spreadsheets.Get(spreadsheetID).Fields("spreadsheetId")
 	_, err := call.Context(ctx).Do()
@@ -55,14 +58,14 @@ func (s *SheetsService) ValidateAccess(ctx context.Context, spreadsheetID string
 		if errors.As(err, &gErr) {
 			switch gErr.Code {
 			case http.StatusNotFound:
-				return errors.New("таблица не найдена, проверь ссылку")
+				return domain.ErrSheetNotFound
 			case http.StatusForbidden:
-				return errors.New("нет доступа: добавь почту сервисного аккаунта в 'Редакторы'")
+				return domain.ErrSheetAccessDenied
 			default:
-				return errors.New("ошибка доступа к Google API")
+				return domain.ErrGoogleAPIFailed
 			}
 		}
-		return err
+		return fmt.Errorf("failed to validate table access: %w", err)
 	}
 
 	return nil
@@ -75,20 +78,21 @@ func (s *SheetsService) SetupUserCategories(
 	categories []string,
 ) error {
 	if len(categories) == 0 {
-		return fmt.Errorf("список категорий пуст")
+		return domain.ErrInvalidCategories
 	}
 
-	// 1. Получаем метаданные таблицы для точного определения имени и ID листа
+	// Getting table metadata for defining sheet ID and name
+	slog.InfoContext(ctx, "Получаем метаданные таблицы по ID и имени листа", slog.String("spreadsheetID", spreadsheetID), slog.String("sheetName", sheetName))
 	ss, err := s.srv.Spreadsheets.Get(spreadsheetID).Context(ctx).Do()
 	if err != nil {
-		slog.Error("Не удалось получить таблицу", "ошибка", err)
-		return fmt.Errorf("ошибка доступа к таблице: %w", err)
+		slog.InfoContext(ctx, "Не удалось получить таблицу", slog.Any("error", err))
+		return fmt.Errorf("error getting access to table: %w", err)
 	}
 
 	var targetSheetID int64
 	actualSheetName := ss.Sheets[0].Properties.Title
 
-	// Ищем лист с именем sheetName (или берем первый лист)
+	// Searching for a sheet with target sheet name (or getting the first one)
 	for _, sheet := range ss.Sheets {
 		if sheetName != "" && sheet.Properties.Title == sheetName {
 			targetSheetID = sheet.Properties.SheetId
@@ -101,52 +105,54 @@ func (s *SheetsService) SetupUserCategories(
 	totalCats := len(categories)
 	endRow := startRow + totalCats - 1
 
-	// 2. Генерируем строки: Категория (A) | Формула суммы (B) | Формула доли (C)
+	// Generating rows: Categories (A) | Summ formula (B) | Share formula (C)
 	var rows [][]interface{}
 	for i, cat := range categories {
 		row := startRow + i
 
-		// Формула для колонки B:
-		// Считает сумму из H:H, где категория = A{row}, тип = "Расход", а Месяц/Год = YYYY-MM из фильтра B3 и B4
+		// Summ formula:
+		// Calculate sum from column I, where:
+		// - type (column H) = "Расход"
+		// - category (column G) = current category A{row}
+		// - date (column F) in period of current month from B3 and B4
 		formulaSum := fmt.Sprintf(
-			`=SUMIFS(H:H, F:F, A%d, G:G, "Расход", I:I, TEXT(DATE($B$3, $B$4, 1), "yyyy-mm"))`,
+			`=SUMIFS(I:I, H:H, "Расход", G:G, A%d, F:F, ">="&DATE($B$3,$B$4,1), F:F, "<"&EDATE(DATE($B$3,$B$4,1),1))`,
 			row,
 		)
 
-		// Формула для колонки C:
-		// Доля текущей категории от общей суммы ИТОГО в ячейке B11
+		// Share formula:
+		// Calculate share of current category from total sum in cell B11
 		formulaShare := fmt.Sprintf(`=IFERROR(B%d / $B$11, 0)`, row)
 
 		rows = append(rows, []interface{}{
-			cat,          // Колонка A
-			formulaSum,   // Колонка B
-			formulaShare, // Колонка C
+			cat,          // Category (column A)
+			formulaSum,   // Summ formula (column B)
+			formulaShare, // Share formula (column C)
 		})
 	}
 
-	// 3. Очищаем старые строки категорий с запасом (A12:C60)
+	// Clearing old rows with categories with reserve (A12:C60)
 	clearRange := fmt.Sprintf("'%s'!A12:C60", actualSheetName)
 	_, _ = s.srv.Spreadsheets.Values.Clear(spreadsheetID, clearRange, &sheets.ClearValuesRequest{}).
 		Context(ctx).
 		Do()
 
-	// 4. Записываем сгенерированные категории и формулы
+	// Writing generated categories and formulas
 	targetRange := fmt.Sprintf("'%s'!A%d:C%d", actualSheetName, startRow, endRow)
 	valueRange := &sheets.ValueRange{
 		Values: rows,
 	}
 
 	_, err = s.srv.Spreadsheets.Values.Update(spreadsheetID, targetRange, valueRange).
-		ValueInputOption("USER_ENTERED"). // Обязательно USER_ENTERED для расчета формул
+		ValueInputOption("USER_ENTERED").
 		Context(ctx).
 		Do()
 	if err != nil {
-		slog.Error("Не удалось записать категории и формулы", "диапазон", targetRange, "ошибка", err)
-		return fmt.Errorf("ошибка записи строк: %w", err)
+		return fmt.Errorf("error while inserting rows: %w", err)
 	}
 
-	// 5. Обновляем выпадающий список (Data Validation) в колонке F
-	// Селект содержит "Доход" первым пунктом + все категории пользователя
+	// Updating data validation list in column G (Category)
+	// List contains "Доход" first + all user categories
 	dropdownItems := append([]string{"Доход"}, categories...)
 	var conditionValues []*sheets.ConditionValue
 	for _, item := range dropdownItems {
@@ -161,10 +167,10 @@ func (s *SheetsService) SetupUserCategories(
 				SetDataValidation: &sheets.SetDataValidationRequest{
 					Range: &sheets.GridRange{
 						SheetId:          targetSheetID,
-						StartRowIndex:    2,    // Начиная с 3-й строки (0-based)
-						EndRowIndex:      1000, // Вниз по журналу
-						StartColumnIndex: 5,    // Колонка F (0-based)
-						EndColumnIndex:   6,
+						StartRowIndex:    2,
+						EndRowIndex:      10000000,
+						StartColumnIndex: 6,
+						EndColumnIndex:   7,
 					},
 					Rule: &sheets.DataValidationRule{
 						Condition: &sheets.BooleanCondition{
@@ -172,7 +178,7 @@ func (s *SheetsService) SetupUserCategories(
 							Values: conditionValues,
 						},
 						ShowCustomUi: true,
-						Strict:       false, // Чтобы не блокировать ввод при мелких расхождениях
+						Strict:       false,
 					},
 				},
 			},
@@ -181,12 +187,12 @@ func (s *SheetsService) SetupUserCategories(
 
 	_, err = s.srv.Spreadsheets.BatchUpdate(spreadsheetID, batchReq).Context(ctx).Do()
 	if err != nil {
-		slog.Warn("Не удалось обновить выпадающий список в F", "ошибка", err)
+		return fmt.Errorf("error while updating data validation list: %w", err)
 	}
 
-	slog.Info("Категории, формулы сумм и выпадающие списки успешно настроены",
-		"лист", actualSheetName,
-		"строк", totalCats,
+	slog.InfoContext(ctx, "Категории, формулы сумм и выпадающие списки успешно настроены",
+		slog.String("sheet", actualSheetName),
+		slog.Int("total_rows", totalCats),
 	)
 
 	return nil
@@ -194,16 +200,13 @@ func (s *SheetsService) SetupUserCategories(
 
 func (s *SheetsService) SaveTransaction(ctx context.Context, spreadsheetID string, transaction *Transaction) error {
 	if transaction == nil {
-		return fmt.Errorf("транзакция не может быть nil")
+		return fmt.Errorf("transaction cannot be empty")
 	}
 
-	// 1. Форматируем дату операции для колонки E: YYYY-MM-DD
-	dateStr := transaction.Date.Format("2006-01-02")
+	// Formating date for column F: YYYY-MM-DD HH:MM
+	dateStr := transaction.Date.Format("2006-01-02 15:04:05")
 
-	// 2. Форматируем Месяц/Год для колонки I: YYYY-MM
-	monthYearStr := transaction.Date.Format("2006-01")
-
-	// 3. Определяем отображаемый тип и категорию
+	// Determining display type and category
 	var displayType string
 	var finalCategory string
 
@@ -215,49 +218,46 @@ func (s *SheetsService) SaveTransaction(ctx context.Context, spreadsheetID strin
 		finalCategory = transaction.Category
 	}
 
-	// 4. Формируем строку строго по колонкам E, F, G, H, I, J
+	// Formating row values according columns: E (ID), F (Дата), G (Категория), H (Тип), I (Сумма), J (Описание)
 	rowValues := []interface{}{
-		dateStr,                 // E: Дата (например, 2026-08-12)
-		finalCategory,           // F: Категория ("Доход" или категория расхода)
-		displayType,             // G: Тип ("Расход" / "Доход")
-		transaction.Amount,      // H: Числовая сумма без валюты (например, 12500)
-		monthYearStr,            // I: Месяц/Год (например, 2026-08)
-		transaction.Description, // J: Описание
+		transaction.ID,          // E: ID
+		dateStr,                 // F: Date (e.g., 2026-08-12 15:04:05)
+		finalCategory,           // G: Category ("Доход" or expense category)
+		displayType,             // H: Type ("Расход" / "Доход")
+		transaction.Amount,      // I: Numerical amount without currency (e.g., 12500)
+		transaction.Description, // J: Description
 	}
 
-	// Диапазон добавления в журнал на листе "Дашборд"
-	targetRange := "'Дашборд'!E:J"
+	// Range for adding transaction to the logbook on the "Dashboard" sheet
+	targetRange := "'Дашборд'!E3:J"
 
 	valueRange := &sheets.ValueRange{
 		Values: [][]interface{}{rowValues},
 	}
 
-	slog.Debug("Сохранение транзакции в Google Таблицу",
-		"таблица_id", spreadsheetID,
-		"тип", displayType,
-		"сумма", transaction.Amount,
-		"категория", finalCategory,
+	slog.InfoContext(ctx, "Добавляем строку транзакции в таблицу",
+		slog.Int64("id", transaction.ID),
+		slog.String("spreadsheet_id", spreadsheetID),
+		slog.String("range", targetRange),
+		slog.String("category", finalCategory),
+		slog.Float64("amount", transaction.Amount),
 	)
 
-	// Append находит первую свободную строку после шапки журнала (строка 3) и вставляет данные
+	// Append finds the first free row in E3:J and writes data without shifting/inserting rows across the sheet
 	_, err := s.srv.Spreadsheets.Values.Append(spreadsheetID, targetRange, valueRange).
 		ValueInputOption("USER_ENTERED").
-		InsertDataOption("INSERT_ROWS").
+		InsertDataOption("OVERWRITE").
 		Context(ctx).
 		Do()
 	if err != nil {
-		slog.Error("Ошибка при сохранении транзакции в таблицу",
-			"ошибка", err,
-			"таблица_id", spreadsheetID,
-			"диапазон", targetRange,
-		)
-		return fmt.Errorf("ошибка добавления строки в таблицу: %w", err)
+		return fmt.Errorf("error appending row to table: %w", err)
 	}
 
-	slog.Info("Транзакция успешно записана в журнал",
-		"тип", displayType,
-		"сумма", transaction.Amount,
-		"категория", finalCategory,
+	slog.InfoContext(ctx, "Транзакция успешно записана в журнал",
+		slog.Int64("id", transaction.ID),
+		slog.String("type", displayType),
+		slog.Float64("amount", transaction.Amount),
+		slog.String("category", finalCategory),
 	)
 
 	return nil

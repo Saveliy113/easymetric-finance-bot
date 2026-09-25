@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"em-finance-bot/internal/domain"
 )
@@ -22,6 +23,7 @@ func (r *UserRepository) GetByTelegramId(ctx context.Context, telegramId int64) 
 		SELECT id,
 			telegram_id as telegramId,
 			spreadsheet_id as spreadsheetId,
+			last_transaction_id as lastTransactionId,
 			username,
 			state,
 			timezone,
@@ -37,6 +39,7 @@ func (r *UserRepository) GetByTelegramId(ctx context.Context, telegramId int64) 
 	var (
 		u              domain.User
 		spreadsheetID  sql.NullString
+		lastTxID       sql.NullInt64
 		username       sql.NullString
 		categoriesJSON sql.NullString
 		stateStr       string
@@ -48,6 +51,7 @@ func (r *UserRepository) GetByTelegramId(ctx context.Context, telegramId int64) 
 		&u.ID,
 		&u.TelegramID,
 		&spreadsheetID,
+		&lastTxID,
 		&username,
 		&stateStr,
 		&timezone,
@@ -59,10 +63,10 @@ func (r *UserRepository) GetByTelegramId(ctx context.Context, telegramId int64) 
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// If no user is found, return nil without an error
-			return nil, nil
+			return nil, domain.ErrUserNotFound
 		}
-		return nil, err
+
+		return nil, fmt.Errorf("error scanning user row: %w", err)
 	}
 
 	// Map the state string to the UserState type
@@ -71,12 +75,18 @@ func (r *UserRepository) GetByTelegramId(ctx context.Context, telegramId int64) 
 		u.SpreadsheetID = spreadsheetID.String
 	}
 
+	if lastTxID.Valid {
+		u.LastTransactionID = int(lastTxID.Int64)
+	}
+
 	if username.Valid {
 		u.Username = username.String
 	}
 
 	if categoriesJSON.Valid && categoriesJSON.String != "" {
-		_ = json.Unmarshal([]byte(categoriesJSON.String), &u.CategoriesCache)
+		if err := json.Unmarshal([]byte(categoriesJSON.String), &u.CategoriesCache); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal categories: %w", err)
+		}
 	}
 
 	if timezone.Valid {
@@ -96,7 +106,7 @@ func (r *UserRepository) Upsert(ctx context.Context, user *domain.User) error {
 	if len(user.CategoriesCache) > 0 {
 		categoriesBytes, err := json.Marshal(user.CategoriesCache)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to marshal categories (tg_id: %d): %w", user.TelegramID, err)
 		}
 		categoriesJSON = sql.NullString{String: string(categoriesBytes), Valid: true}
 	}
@@ -110,6 +120,11 @@ func (r *UserRepository) Upsert(ctx context.Context, user *domain.User) error {
 	var spreadsheetIDVal sql.NullString
 	if user.SpreadsheetID != "" {
 		spreadsheetIDVal = sql.NullString{String: user.SpreadsheetID, Valid: true}
+	}
+
+	var lastTxIDVal sql.NullInt64
+	if user.LastTransactionID > 0 {
+		lastTxIDVal = sql.NullInt64{Int64: int64(user.LastTransactionID), Valid: true}
 	}
 
 	// Handling timezone and currency as sql.NullString to avoid inserting empty strings
@@ -131,17 +146,19 @@ func (r *UserRepository) Upsert(ctx context.Context, user *domain.User) error {
 			timezone, 
 			currency, 
 			spreadsheet_id, 
+			last_transaction_id,
 			categories_cache, 
 			updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(telegram_id) DO UPDATE SET
-			username         = excluded.username,
-			state            = excluded.state,
-			timezone         = COALESCE(excluded.timezone, users.timezone),
-			currency         = COALESCE(excluded.currency, users.currency),
-			spreadsheet_id   = COALESCE(excluded.spreadsheet_id, users.spreadsheet_id),
-			categories_cache = COALESCE(excluded.categories_cache, users.categories_cache),
-			updated_at       = CURRENT_TIMESTAMP;
+			username            = excluded.username,
+			state               = excluded.state,
+			timezone            = COALESCE(excluded.timezone, users.timezone),
+			currency            = COALESCE(excluded.currency, users.currency),
+			spreadsheet_id      = COALESCE(excluded.spreadsheet_id, users.spreadsheet_id),
+			last_transaction_id = COALESCE(excluded.last_transaction_id, users.last_transaction_id, 0),
+			categories_cache    = COALESCE(excluded.categories_cache, users.categories_cache),
+			updated_at          = CURRENT_TIMESTAMP;
 	`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -151,10 +168,27 @@ func (r *UserRepository) Upsert(ctx context.Context, user *domain.User) error {
 		timezoneVal,
 		currencyVal,
 		spreadsheetIDVal,
+		lastTxIDVal,
 		categoriesJSON,
 	)
 
 	return err
+}
+
+func (r *UserRepository) IncrementLastTransactionID(ctx context.Context, telegramId int64) (int, error) {
+	query := `
+		UPDATE users
+		SET last_transaction_id = COALESCE(last_transaction_id, 0) + 1,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE telegram_id = ?
+		RETURNING last_transaction_id
+	`
+	var newID int
+	err := r.db.QueryRowContext(ctx, query, telegramId).Scan(&newID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to increment last_transaction_id: %w", err)
+	}
+	return newID, nil
 }
 
 func (r *UserRepository) UpdateState(ctx context.Context, telegramId int64, newState domain.UserState) error {

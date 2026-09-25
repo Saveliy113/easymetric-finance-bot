@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"google.golang.org/genai"
@@ -54,6 +55,8 @@ func NewGeminiService(ctx context.Context, apiKey string) *GeminiService {
 }
 
 func (s *GeminiService) ParseCity(ctx context.Context, cityName string) (*LocationInfo, error) {
+	slog.InfoContext(ctx, "Определяем город, часовой пояс и валюту через Gemini", slog.String("cityName", cityName))
+
 	prompt := fmt.Sprintf(cityResolutionPrompt, cityName)
 
 	config := &genai.GenerateContentConfig{
@@ -79,6 +82,13 @@ func (s *GeminiService) ParseCity(ctx context.Context, cityName string) (*Locati
 	if err := json.Unmarshal([]byte(rawText), &info); err != nil {
 		return nil, fmt.Errorf("failed to decode json: %w (raw: %s)", err, rawText)
 	}
+
+	slog.InfoContext(ctx, "Город успешно определен через Gemini",
+		slog.Bool("is_valid", info.IsValid),
+		slog.String("city", info.City),
+		slog.String("timezone", info.Timezone),
+		slog.String("currency", info.Currency),
+	)
 
 	return &info, nil
 }

@@ -32,7 +32,8 @@ func createTables() {
 		CREATE TABLE IF NOT EXISTS users (
 			id 				 INTEGER PRIMARY KEY AUTOINCREMENT,
 			telegram_id 	 INTEGER NOT NULL UNIQUE,
-    		spreadsheet_id   TEXT,
+			spreadsheet_id   TEXT,
+			last_transaction_id INTEGER,
 			username         TEXT,
     		state            TEXT NOT NULL DEFAULT 'AWAITING_CITY',
 			timezone         TEXT,
