@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"google.golang.org/api/googleapi"
@@ -36,6 +38,71 @@ type Transaction struct {
 	Description string          `json:"description" db:"description"` // Описание (например, "Обед с коллегами")
 	Date        time.Time       `json:"date" db:"date"`               // Дата и время совершения операции
 	CreatedAt   time.Time       `json:"created_at" db:"created_at"`   // Время создания записи в БД
+}
+
+type FoundTransaction struct {
+	RowIndex    int          // Row number in google sheets
+	Transaction *Transaction // Transaction
+}
+
+// FindTransactionByID searches transaction by it's id in table E column
+func (s *SheetsService) FindTransactionByID(ctx context.Context, spreadsheetID string, targetID int) (*FoundTransaction, error) {
+	// Reading journal operations (starting from row 3, where data begins)
+	readRange := "'Дашборд'!E3:J"
+	resp, err := s.srv.Spreadsheets.Values.Get(spreadsheetID, readRange).
+		Context(ctx).
+		Do()
+	if err != nil {
+		return nil, fmt.Errorf("[SheetsService.FindTransactionByID] get range %s: %w", readRange, err)
+	}
+
+	targetIDStr := strconv.Itoa(targetID)
+
+	// Searching from the end, as recent operations are at the bottom
+	for i := len(resp.Values) - 1; i >= 0; i-- {
+		row := resp.Values[i]
+		if len(row) == 0 {
+			continue
+		}
+
+		// Column E is row[0] (ID)
+		if fmt.Sprint(row[0]) == targetIDStr {
+			tx := &Transaction{
+				ID: int64(targetID),
+			}
+
+			// Transaction date
+			if len(row) > 1 {
+				tx.Date, _ = time.Parse("2006-01-02 15:04", fmt.Sprint(row[1]))
+			}
+
+			// Category and type
+			if len(row) > 2 {
+				tx.Category = fmt.Sprint(row[2])
+			}
+			if len(row) > 3 {
+				tx.Type = TransactionType(fmt.Sprint(row[3]))
+			}
+
+			// Transaction amount
+			if len(row) > 4 {
+				cleanAmount := strings.ReplaceAll(fmt.Sprint(row[4]), ",", "")
+				tx.Amount, _ = strconv.ParseFloat(cleanAmount, 64)
+			}
+
+			// Transaction description
+			if len(row) > 5 {
+				tx.Description = fmt.Sprint(row[5])
+			}
+
+			return &FoundTransaction{
+				RowIndex:    i + 3,
+				Transaction: tx,
+			}, nil
+		}
+	}
+
+	return nil, domain.ErrTransactionNotFound
 }
 
 func NewSheetService(ctx context.Context, credentialsFilePath string) *SheetsService {
