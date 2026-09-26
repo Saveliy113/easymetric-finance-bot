@@ -1,6 +1,10 @@
 package telegram
 
-import "gopkg.in/telebot.v3"
+import (
+	"strconv"
+
+	"gopkg.in/telebot.v3"
+)
 
 const (
 	btnIDStartConfig                    = "start_configuration"
@@ -10,7 +14,10 @@ const (
 	btnIDCancelTransactionClarification = "cancel_transaction_clarification"
 	btnQuickEditTransaction             = "quick_edit_transaction"
 	btnQuickDeleteTransaction           = "quick_delete_transaction"
-	
+	btnEditTransactionCategory          = "edit_transaction_category"
+	btnEditTransactionAmount            = "edit_transaction_amount"
+	btnEditTransactionDescription       = "edit_transaction_description"
+	btnCancelTransactionEditing         = "cancel_transaction_editing"
 )
 
 func (r *Router) startConfigMarkup() *telebot.ReplyMarkup {
@@ -34,6 +41,24 @@ func (r *Router) defaultCategoriesMarkup() *telebot.ReplyMarkup {
 	btnDefault := markup.Data("✅ Использовать стандартные", btnIDDefaultCat)
 
 	markup.Inline(markup.Row(btnDefault))
+
+	return markup
+}
+
+func transactionEditingButtonsMarkup(transactionId int) *telebot.ReplyMarkup {
+	markup := &telebot.ReplyMarkup{}
+	transactionIdStr := strconv.Itoa(transactionId)
+
+	btnEdit := markup.Data("🏷 Сменить категорию", btnEditTransactionCategory, transactionIdStr)
+	btnEditAmount := markup.Data("💰 Изменить сумму", btnEditTransactionAmount, transactionIdStr)
+	btnEditDescription := markup.Data("✏️ Изменить описание", btnEditTransactionDescription, transactionIdStr)
+	btnCancel := markup.Data("🔙 Отменить", btnCancelTransactionEditing)
+
+	// 2x2 grid
+	markup.Inline(
+		markup.Row(btnEdit, btnEditAmount),
+		markup.Row(btnEditDescription, btnCancel),
+	)
 
 	return markup
 }
