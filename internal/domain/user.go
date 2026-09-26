@@ -14,6 +14,8 @@ const (
 	StateReady              UserState = "READY"
 
 	StateAwaitingCategoryClarification UserState = "AWAITING_CATEGORY_CLARIFICATION"
+	StateAwaitingEditAmount            UserState = "AWAITING_EDIT_AMOUNT"
+	StateAwaitingEditDescription       UserState = "AWAITING_EDIT_DESCRIPTION"
 )
 
 type User struct {
@@ -28,6 +30,7 @@ type User struct {
 	LastTransactionID  int    // Last inserted transaction in google sheets
 	LastMessageID      int    // Last message sent to user in chat
 	PendingTransaction string // Transaction waiting for clarification
+	DraftEditTxID      int64  // Transaction ID currently being edited
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 }

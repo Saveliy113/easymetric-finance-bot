@@ -41,6 +41,7 @@ func createTables() {
 			last_transaction_id INTEGER,
 			pending_transaction TEXT,
 			last_message_id INTEGER,
+			draft_edit_tx_id INTEGER,
 			created_at 		 DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);
