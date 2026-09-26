@@ -10,6 +10,7 @@ import (
 
 	"em-finance-bot/internal/domain"
 	"em-finance-bot/internal/service/ai"
+	"em-finance-bot/internal/service/sheets"
 
 	"gopkg.in/telebot.v3"
 )
@@ -359,7 +360,6 @@ func (r *Router) handleSelectClarifiedCategory(c telebot.Context) error {
 	// Send result message
 	textResponse, menu := basicTransactionMarkup(transaction, user)
 
-
 	// Delete previous clarification notification
 	_ = r.bot.Delete(c.Message())
 
@@ -488,4 +488,66 @@ func (r *Router) sendUserCategoriesForEditing(c telebot.Context) error {
 	}
 
 	return c.Send(text, categoriesMarkup, telebot.ModeHTML)
+}
+
+func (r *Router) changeTransactionCategory(c telebot.Context) error {
+	ctx := c.Get(ContextKey).(context.Context)
+	_ = c.Respond()
+
+	// Getting category and transaction id
+	payload := c.Data()
+	parts := strings.SplitN(payload, "|", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid callback data format: %s", payload)
+	}
+
+	// Extracting transaction id
+	transactionID, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid transaction id in callback data (%s): %w", parts[0], err)
+	}
+
+	// Getting user from the db
+	user, err := r.userRepo.GetByTelegramId(ctx, c.Sender().ID)
+	if err != nil {
+		return err
+	}
+
+	// Unmarshaling user categories to resolve category by index
+	var categories []string
+	if err := json.Unmarshal([]byte(user.CategoriesCache), &categories); err != nil {
+		return fmt.Errorf("failed to unmarshal user categories: %w", err)
+	}
+
+	catIdx, err := strconv.Atoi(parts[1])
+	if err != nil || catIdx < 0 || catIdx >= len(categories) {
+		return fmt.Errorf("invalid category index in callback data (%s)", parts[1])
+	}
+	selectedCategory := categories[catIdx]
+
+	// Updating transaction category in sheets
+	err = r.sheetsService.UpdateTransactionCategory(ctx, user.SpreadsheetID, transactionID, selectedCategory)
+	if err != nil {
+		return err
+	}
+
+	// Getting updated transaction data from sheet
+	transaction, err := r.sheetsService.FindTransactionByID(ctx, user.SpreadsheetID, int(transactionID))
+	if err != nil {
+		slog.WarnContext(ctx, "Не удалось перечитать операцию после смены категории",
+			slog.Int64("tx_id", transactionID),
+			slog.Any("error", err),
+		)
+
+		// Возвращаем лаконичное подтверждение, но СОХРАНЯЕМ стандартные кнопки управления!
+		fallbackTx := &sheets.Transaction{ID: transactionID, Category: selectedCategory}
+		_, fallbackMenu := basicTransactionMarkup(fallbackTx, user)
+		fallbackText := fmt.Sprintf("✅ Категория операции #%d изменена на <b>%s</b>!", transactionID, selectedCategory)
+		return c.Edit(fallbackText, fallbackMenu, telebot.ModeHTML)
+	}
+
+	// Send result message
+	textResponse, menu := basicTransactionMarkup(transaction.Transaction, user)
+
+	return c.Edit(textResponse, menu, telebot.ModeHTML)
 }

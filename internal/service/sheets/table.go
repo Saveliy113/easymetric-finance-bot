@@ -54,7 +54,7 @@ func (s *SheetsService) FindTransactionByID(ctx context.Context, spreadsheetID s
 		Context(ctx).
 		Do()
 	if err != nil {
-		return nil, fmt.Errorf("[SheetsService.FindTransactionByID] get range %s: %w", readRange, err)
+		return nil, err
 	}
 
 	targetIDStr := strconv.Itoa(targetID)
@@ -331,3 +331,41 @@ func (s *SheetsService) SaveTransaction(ctx context.Context, spreadsheetID strin
 
 	return nil
 }
+
+func (s *SheetsService) UpdateTransactionCategory(ctx context.Context, spreadsheetID string, transactionID int64, selectedCategory string) error {
+	// Searching target row number by transaction id
+	transaction, err := s.FindTransactionByID(ctx, spreadsheetID, int(transactionID))
+	if err != nil {
+		return err
+	}
+	
+	// Defining Range (G - category column)
+	cellRange := fmt.Sprintf("'Дашборд'!G%d", transaction.RowIndex)
+
+	// Defining value range
+	valRange := &sheets.ValueRange{
+		Values: [][]interface{}{{selectedCategory}},
+	}
+
+	slog.InfoContext(ctx, "Обновление категории транзакции в Google Таблице",
+		slog.Int64("transaction_id", transactionID),
+		slog.String("new_category", selectedCategory),
+	)
+
+	// Updating category cell
+	_, err = s.srv.Spreadsheets.Values.Update(spreadsheetID, cellRange, valRange).
+		ValueInputOption("USER_ENTERED").
+		Context(ctx).
+		Do()
+	if err != nil {
+		return err
+	}
+
+	slog.InfoContext(ctx, "Категория операции успешно обновлена в таблице",
+		slog.Int64("transaction_id", transactionID),
+		slog.String("new_category", selectedCategory),
+	)
+
+	return nil
+}
+	

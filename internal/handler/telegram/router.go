@@ -59,6 +59,7 @@ func (r *Router) Register() {
 	r.bot.Handle(&telebot.InlineButton{Unique: btnQuickDeleteTransaction}, r.handleDeleteTransaction)
 	r.bot.Handle(&telebot.InlineButton{Unique: btnCancelTransactionEditing}, r.handleCancelTransactionEditing)
 	r.bot.Handle(&telebot.InlineButton{Unique: btnEditTransactionCategory}, r.sendUserCategoriesForEditing)
+	r.bot.Handle(&telebot.InlineButton{Unique: btnChangeTransactionCategory}, r.changeTransactionCategory)
 	r.bot.Handle(&telebot.InlineButton{Unique: btnBackToEditingTransaction}, r.sendTransactionEditingButtons)
 }
 

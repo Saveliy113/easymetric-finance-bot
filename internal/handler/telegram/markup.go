@@ -114,13 +114,14 @@ func basicTransactionMarkup(transaction *sheets.Transaction, user *domain.User) 
 	return textResponse, menu
 }
 
-func transactionCategoriesMarkup(transactionId int, categories []string) *telebot.ReplyMarkup {
+func transactionCategoriesMarkup(transactionID int, categories []string) *telebot.ReplyMarkup {
 	markup := &telebot.ReplyMarkup{}
 	var rows []telebot.Row
 
 	var currentRow []telebot.Btn
-	for _, category := range categories {
-		btn := markup.Data(category, btnChangeTransactionCategory, category)
+	for idx, category := range categories {
+		payload := fmt.Sprintf("%d|%d", transactionID, idx)
+		btn := markup.Data(category, btnChangeTransactionCategory, payload)
 		currentRow = append(currentRow, btn)
 
 		if len(currentRow) == 2 {
@@ -133,7 +134,7 @@ func transactionCategoriesMarkup(transactionId int, categories []string) *telebo
 		rows = append(rows, markup.Row(currentRow...))
 	}
 
-	btnBack := markup.Data("🔙 Назад", btnBackToEditingTransaction, strconv.Itoa(transactionId))
+	btnBack := markup.Data("🔙 Назад", btnBackToEditingTransaction, strconv.Itoa(transactionID))
 	rows = append(rows, markup.Row(btnBack))
 
 	markup.Inline(rows...)
