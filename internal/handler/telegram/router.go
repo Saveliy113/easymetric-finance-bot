@@ -57,6 +57,7 @@ func (r *Router) Register() {
 	// Transaction quick edit and delete handlers
 	r.bot.Handle(&telebot.InlineButton{Unique: btnQuickEditTransaction}, r.sendTransactionEditingButtons)
 	r.bot.Handle(&telebot.InlineButton{Unique: btnQuickDeleteTransaction}, r.handleDeleteTransaction)
+	r.bot.Handle(&telebot.InlineButton{Unique: btnCancelTransactionEditing}, r.handleCancelTransactionEditing)
 }
 
 func (r *Router) handleIncomingMessage(c telebot.Context) error {

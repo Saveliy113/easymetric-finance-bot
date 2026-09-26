@@ -22,6 +22,52 @@ func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, us
 		return domain.ErrSheetNotConfigured
 	}
 
+	// Cleaning inline editing buttons
+	// Returning previous message to clean receipt state (without buttons)
+	if user.LastMessageID > 0 {
+		prevMsg := &telebot.Message{
+			ID:   user.LastMessageID,
+			Chat: c.Chat(),
+		}
+
+		// Если у пользователя был сохранен ID прошлой операции, восстанавливаем текст чека
+		if user.LastTransactionID > 0 {
+			transactionRow, err := r.sheetsService.FindTransactionByID(ctx, user.SpreadsheetID, user.LastTransactionID)
+			if err == nil && transactionRow != nil {
+				prevTx := transactionRow.Transaction
+
+				var prevTransactionResponse string
+				if prevTx.Type == sheets.TypeIncome {
+					prevTransactionResponse = fmt.Sprintf("✅ <b>Доход записан!</b>\n\n🆔 ID: <b>#%d</b>\n💰 Сумма: <b>%.2f %s</b>\n📝 Описание: %s\n📅 Дата: %s",
+						prevTx.ID,
+						prevTx.Amount,
+						user.Currency,
+						prevTx.Description,
+						prevTx.Date.Format("02.01.2006 15:04"),
+					)
+				} else {
+					prevTransactionResponse = fmt.Sprintf("✅ <b>Расход записан!</b>\n\n🆔 ID: <b>#%d</b>\n💸 Сумма: <b>%.2f %s</b>\n📁 Категория: <b>%s</b>\n📝 Описание: %s\n📅 Дата: %s",
+						prevTx.ID,
+						prevTx.Amount,
+						user.Currency,
+						prevTx.Category,
+						prevTx.Description,
+						prevTx.Date.Format("02.01.2006 15:04"),
+					)
+				}
+
+				// Передаем пустую разметку &telebot.ReplyMarkup{} — это стирает все кнопки
+				// Ошибку игнорируем (_, _), чтобы "message is not modified" не прерывала обработку
+				_, _ = r.bot.Edit(prevMsg, prevTransactionResponse, &telebot.ReplyMarkup{}, telebot.ModeHTML)
+			} else {
+				// Если по какой-то причине запись не найдена, просто стираем кнопки
+				_, _ = r.bot.EditReplyMarkup(prevMsg, nil)
+			}
+		} else {
+			_, _ = r.bot.EditReplyMarkup(prevMsg, nil)
+		}
+	}
+
 	// Detect the message type: text or voice and get message text
 	var inputText string
 
@@ -203,17 +249,6 @@ func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, us
 		return err
 	}
 
-	// Cleaning inline editing buttons
-	if user.LastMessageID > 0 {
-		// Creating message for telebot
-		prevMsg := &telebot.Message{
-			ID:   user.LastMessageID,
-			Chat: &telebot.Chat{ID: user.TelegramID},
-		}
-		// Removing inline buttons for previous message
-		_, _ = r.bot.EditReplyMarkup(prevMsg, nil)
-	}
-
 	// Updating user (reseting state, saving last sent message id)
 	slog.InfoContext(
 		ctx,
@@ -224,6 +259,7 @@ func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, us
 	user.PendingTransaction = ""
 	user.State = domain.StateReady
 	user.LastMessageID = sentMessage.ID
+	user.LastTransactionID = nextTxID
 
 	if err := r.userRepo.Upsert(ctx, user); err != nil {
 		return err
@@ -283,4 +319,64 @@ func (r *Router) handleDeleteTransaction(c telebot.Context) error {
 	fmt.Println("Transaction for deleting: ", c.Data())
 
 	return nil
+}
+
+func (r *Router) handleCancelTransactionEditing(c telebot.Context) error {
+	_ = c.Respond()
+	ctx := c.Get(ContextKey).(context.Context)
+
+	// Getting transaction id from callback data
+	txID, err := strconv.Atoi(c.Data())
+	if err != nil {
+		return err
+	}
+
+	// Getting user data
+	user, err := r.userRepo.GetByTelegramId(ctx, c.Sender().ID)
+	if err != nil || user == nil {
+		return err
+	}
+
+	// Getting actual transaction data from sheets
+	found, err := r.sheetsService.FindTransactionByID(ctx, user.SpreadsheetID, txID)
+	if err != nil {
+		// If the row has already been deleted, just remove the buttons
+		return c.Edit("⚠️ Операция не найдена в таблице.", telebot.ModeHTML)
+	}
+
+	// Formatting initial receipt text
+	var textResponse string
+	if found.Transaction.Type == sheets.TypeIncome {
+		textResponse = fmt.Sprintf("✅ <b>Доход записан!</b>\n\n🆔 ID: <b>#%d</b>\n💰 Сумма: <b>%.2f %s</b>\n📝 Описание: %s\n📅 Дата: %s",
+			found.Transaction.ID,
+			found.Transaction.Amount,
+			user.Currency,
+			found.Transaction.Description,
+			found.Transaction.Date.Format("02.01.2006 15:04"),
+		)
+	} else {
+		textResponse = fmt.Sprintf("✅ <b>Расход записан!</b>\n\n🆔 ID: <b>#%d</b>\n💸 Сумма: <b>%.2f %s</b>\n📁 Категория: <b>%s</b>\n📝 Описание: %s\n📅 Дата: %s",
+			found.Transaction.ID,
+			found.Transaction.Amount,
+			user.Currency,
+			found.Transaction.Category,
+			found.Transaction.Description,
+			found.Transaction.Date.Format("02.01.2006 15:04"),
+		)
+	}
+
+	// Restoring basic layout with edit/delete buttons
+	menu := &telebot.ReplyMarkup{}
+	txIDStr := strconv.Itoa(txID)
+	btnEdit := menu.Data("✏️ Изменить", btnQuickEditTransaction, txIDStr)
+	btnDelete := menu.Data("❌ Удалить", btnQuickDeleteTransaction, txIDStr)
+	menu.Inline(menu.Row(btnEdit, btnDelete))
+
+	// Guaranteeing FSM state reset
+	if user.State != domain.StateReady {
+		user.State = domain.StateReady
+		_ = r.userRepo.Upsert(ctx, user)
+	}
+
+	return c.Edit(textResponse, menu, telebot.ModeHTML)
 }

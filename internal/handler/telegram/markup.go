@@ -52,7 +52,7 @@ func transactionEditingButtonsMarkup(transactionId int) *telebot.ReplyMarkup {
 	btnEdit := markup.Data("🏷 Сменить категорию", btnEditTransactionCategory, transactionIdStr)
 	btnEditAmount := markup.Data("💰 Изменить сумму", btnEditTransactionAmount, transactionIdStr)
 	btnEditDescription := markup.Data("✏️ Изменить описание", btnEditTransactionDescription, transactionIdStr)
-	btnCancel := markup.Data("🔙 Отменить", btnCancelTransactionEditing)
+	btnCancel := markup.Data("🔙 Отменить", btnCancelTransactionEditing, transactionIdStr)
 
 	// 2x2 grid
 	markup.Inline(
