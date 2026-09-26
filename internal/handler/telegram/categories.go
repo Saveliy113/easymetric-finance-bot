@@ -299,9 +299,6 @@ func (r *Router) handleSelectClarifiedCategory(c telebot.Context) error {
 	// Responding to user
 	_ = c.Respond()
 
-	// Delete inline clarification buttons
-	_, _ = r.bot.EditReplyMarkup(c.Message(), nil)
-
 	// Checking that user still in AwaitingCategoryClarification state
 	slog.InfoContext(
 		ctx, "Проверка состяния пользователя (ожидание уточнения категории транзакции)",
@@ -399,6 +396,13 @@ func (r *Router) handleSelectClarifiedCategory(c telebot.Context) error {
 
 	menu.Inline(menu.Row(btnEdit, btnDelete))
 
+
+	// Delete previous clarification notification
+	_ = r.bot.Delete(c.Message())
+
+	// Delete inline clarification buttons
+	_, _ = r.bot.EditReplyMarkup(c.Message(), nil)
+
 	sentMessage, err := r.bot.Send(c.Chat(), textResponse, menu, telebot.ModeHTML)
 	if err != nil {
 		return err
@@ -441,10 +445,14 @@ func (r *Router) handleCancelTransactionClarification(c telebot.Context) error {
 
 	// Getting user
 	user, err := r.userRepo.GetByTelegramId(ctx, c.Sender().ID)
-	if err == nil && user != nil {
-		user.State = domain.StateReady
-		user.PendingTransaction = ""
-		_ = r.userRepo.Upsert(ctx, user)
+	if err != nil {
+		return err
+	}
+
+	user.State = domain.StateReady
+	user.PendingTransaction = ""
+	if err := r.userRepo.Upsert(ctx, user); err != nil {
+		return err
 	}
 
 	_, _ = r.bot.EditReplyMarkup(c.Message(), nil)
@@ -473,4 +481,48 @@ func (r *Router) handleSheetStep(ctx context.Context, c telebot.Context) error {
 	}
 
 	return c.Send(photo, telebot.ModeHTML)
+}
+
+func (r *Router) sendUserCategoriesForEditing(c telebot.Context) error {
+	ctx := c.Get(ContextKey).(context.Context)
+	transactionIdStr := c.Data()
+	transactionId, err := strconv.Atoi(transactionIdStr)
+	if err != nil {
+		return fmt.Errorf("invalid transaction id in callback data (%s): %w", transactionIdStr, err)
+	}
+
+	// Getting user from the db
+	user, err := r.userRepo.GetByTelegramId(ctx, c.Sender().ID)
+	if err != nil {
+		return err
+	}
+
+	// Unmarshal user categories
+	var categories []string
+	if err := json.Unmarshal([]byte(user.CategoriesCache), &categories); err != nil {
+		return fmt.Errorf("failed to unmarshal user categories: %w", err)
+	}
+
+	// Searching for an actual transaction row in sheets
+	transactionRow, err := r.sheetsService.FindTransactionByID(ctx, user.SpreadsheetID, transactionId)
+	if err != nil {
+		return err
+	}
+
+	categoriesMarkup := transactionCategoriesMarkup(transactionId, categories)
+	text := fmt.Sprintf(
+		"✏️ <b>Редактирование операции #%d</b>\n\n"+
+			"• Текущая выбранная категория: <b>%s</b>\n\n"+
+			"📝 Выбери новую категорию:",
+		transactionRow.Transaction.ID,
+		transactionRow.Transaction.Category,
+	)
+
+	// Если переходим по клику на кнопку — лучше обновить сообщение через c.Edit,
+	// чтобы не плодить новые сообщения в чате:
+	if c.Callback() != nil {
+		return c.Edit(text, categoriesMarkup, telebot.ModeHTML)
+	}
+
+	return c.Send(text, categoriesMarkup, telebot.ModeHTML)
 }
