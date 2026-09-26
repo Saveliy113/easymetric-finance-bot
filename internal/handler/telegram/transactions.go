@@ -8,10 +8,8 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
-	"time"
 
 	"em-finance-bot/internal/domain"
-	"em-finance-bot/internal/service/sheets"
 
 	"gopkg.in/telebot.v3"
 )
@@ -36,25 +34,7 @@ func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, us
 			if err == nil && transactionRow != nil {
 				prevTx := transactionRow.Transaction
 
-				var prevTransactionResponse string
-				if prevTx.Type == sheets.TypeIncome {
-					prevTransactionResponse = fmt.Sprintf("✅ <b>Доход записан!</b>\n\n🆔 ID: <b>#%d</b>\n💰 Сумма: <b>%.2f %s</b>\n📝 Описание: %s\n📅 Дата: %s",
-						prevTx.ID,
-						prevTx.Amount,
-						user.Currency,
-						prevTx.Description,
-						prevTx.Date.Format("02.01.2006 15:04"),
-					)
-				} else {
-					prevTransactionResponse = fmt.Sprintf("✅ <b>Расход записан!</b>\n\n🆔 ID: <b>#%d</b>\n💸 Сумма: <b>%.2f %s</b>\n📁 Категория: <b>%s</b>\n📝 Описание: %s\n📅 Дата: %s",
-						prevTx.ID,
-						prevTx.Amount,
-						user.Currency,
-						prevTx.Category,
-						prevTx.Description,
-						prevTx.Date.Format("02.01.2006 15:04"),
-					)
-				}
+				prevTransactionResponse, _ := basicTransactionMarkup(prevTx, user)
 
 				// Передаем пустую разметку &telebot.ReplyMarkup{} — это стирает все кнопки
 				// Ошибку игнорируем (_, _), чтобы "message is not modified" не прерывала обработку
@@ -144,7 +124,7 @@ func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, us
 		slog.String("text", inputText),
 	)
 
-	transaction, err := r.aiService.ParseTransaction(ctx, inputText, categories, user.Currency, user.Timezone)
+	aiTransactionData, err := r.aiService.ParseTransaction(ctx, inputText, categories, user.Currency, user.Timezone)
 	if waitMsg != nil {
 		_ = r.bot.Delete(waitMsg)
 	}
@@ -153,41 +133,41 @@ func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, us
 		return err
 	}
 
-	if !transaction.IsValid {
+	if !aiTransactionData.IsValid {
 		return domain.ErrInvalidTransaction
 	}
 
 	slog.InfoContext(ctx, "Операция успешно распознана",
 		slog.Int64("user_id", user.TelegramID),
-		slog.String("type", transaction.Type),
-		slog.Float64("amount", transaction.Amount),
-		slog.String("category", transaction.Category),
-		slog.String("description", transaction.Description),
+		slog.String("type", aiTransactionData.Type),
+		slog.Float64("amount", aiTransactionData.Amount),
+		slog.String("category", aiTransactionData.Category),
+		slog.String("description", aiTransactionData.Description),
 	)
 
 	slog.InfoContext(
 		ctx, "Требуется уточнение категории транзации",
-		slog.Bool("needs_clarification", transaction.NeedsClarification),
-		slog.Float64("amount", transaction.Amount),
-		slog.String("description", transaction.Description),
+		slog.Bool("needs_clarification", aiTransactionData.NeedsClarification),
+		slog.Float64("amount", aiTransactionData.Amount),
+		slog.String("description", aiTransactionData.Description),
 	)
 
 	// If category clarification is needed,
 	// sending category candidates buttons
-	if transaction.NeedsClarification {
-		if len(transaction.SuggestedCategories) > 0 {
+	if aiTransactionData.NeedsClarification {
+		if len(aiTransactionData.SuggestedCategories) > 0 {
 			slog.InfoContext(
 				ctx,
 				"Отправляем варианты категорий",
 			)
 
-			return r.sendCategorySuggestions(ctx, c, transaction, user)
+			return r.sendCategorySuggestions(ctx, c, aiTransactionData, user)
 		} else {
 			slog.InfoContext(
 				ctx,
 				"Отправляем форму для ручного ввода категории",
 			)
-			return r.sendManualCategorySelection(ctx, c, transaction, user)
+			return r.sendManualCategorySelection(ctx, c, aiTransactionData, user)
 		}
 	}
 
@@ -202,47 +182,13 @@ func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, us
 		slog.Int("transaction_id", nextTxID),
 	)
 
-	if err = r.sheetsService.SaveTransaction(ctx, user.SpreadsheetID, &sheets.Transaction{
-		ID:          int64(nextTxID),
-		UserID:      user.TelegramID,
-		Type:        sheets.TransactionType(transaction.Type),
-		Amount:      transaction.Amount,
-		Category:    transaction.Category,
-		Description: transaction.Description,
-		Date:        transaction.Date,
-		CreatedAt:   time.Now(),
-	}); err != nil {
+	transaction := aiTransactionData.ToTransaction(int64(nextTxID), user.TelegramID)
+
+	if err = r.sheetsService.SaveTransaction(ctx, user.SpreadsheetID, transaction); err != nil {
 		return err
 	}
 
-	var textResponse string
-	if transaction.Type == string(sheets.TypeIncome) {
-		textResponse = fmt.Sprintf("✅ <b>Доход записан!</b>\n\n🆔 ID: <b>#%d</b>\n💰 Сумма: <b>%.2f %s</b>\n📝 Описание: %s\n📅 Дата: %s",
-			nextTxID,
-			transaction.Amount,
-			user.Currency,
-			transaction.Description,
-			transaction.Date.Format("02.01.2006 15:04"),
-		)
-	} else {
-		textResponse = fmt.Sprintf("✅ <b>Расход записан!</b>\n\n🆔 ID: <b>#%d</b>\n💸 Сумма: <b>%.2f %s</b>\n📁 Категория: <b>%s</b>\n📝 Описание: %s\n📅 Дата: %s",
-			nextTxID,
-			transaction.Amount,
-			user.Currency,
-			transaction.Category,
-			transaction.Description,
-			transaction.Date.Format("02.01.2006 15:04"),
-		)
-	}
-
-	// Applyion inline editing buttons
-	menu := &telebot.ReplyMarkup{}
-
-	transactionIdStr := strconv.Itoa(nextTxID)
-	btnEdit := menu.Data("✏️ Изменить", btnQuickEditTransaction, transactionIdStr)
-	btnDelete := menu.Data("❌ Удалить", btnQuickDeleteTransaction, transactionIdStr)
-
-	menu.Inline(menu.Row(btnEdit, btnDelete))
+	textResponse, menu := basicTransactionMarkup(transaction, user)
 
 	sentMessage, err := r.bot.Send(c.Chat(), textResponse, menu, telebot.ModeHTML)
 	if err != nil {
@@ -345,32 +291,7 @@ func (r *Router) handleCancelTransactionEditing(c telebot.Context) error {
 	}
 
 	// Formatting initial receipt text
-	var textResponse string
-	if found.Transaction.Type == sheets.TypeIncome {
-		textResponse = fmt.Sprintf("✅ <b>Доход записан!</b>\n\n🆔 ID: <b>#%d</b>\n💰 Сумма: <b>%.2f %s</b>\n📝 Описание: %s\n📅 Дата: %s",
-			found.Transaction.ID,
-			found.Transaction.Amount,
-			user.Currency,
-			found.Transaction.Description,
-			found.Transaction.Date.Format("02.01.2006 15:04"),
-		)
-	} else {
-		textResponse = fmt.Sprintf("✅ <b>Расход записан!</b>\n\n🆔 ID: <b>#%d</b>\n💸 Сумма: <b>%.2f %s</b>\n📁 Категория: <b>%s</b>\n📝 Описание: %s\n📅 Дата: %s",
-			found.Transaction.ID,
-			found.Transaction.Amount,
-			user.Currency,
-			found.Transaction.Category,
-			found.Transaction.Description,
-			found.Transaction.Date.Format("02.01.2006 15:04"),
-		)
-	}
-
-	// Restoring basic layout with edit/delete buttons
-	menu := &telebot.ReplyMarkup{}
-	txIDStr := strconv.Itoa(txID)
-	btnEdit := menu.Data("✏️ Изменить", btnQuickEditTransaction, txIDStr)
-	btnDelete := menu.Data("❌ Удалить", btnQuickDeleteTransaction, txIDStr)
-	menu.Inline(menu.Row(btnEdit, btnDelete))
+	textResponse, menu := basicTransactionMarkup(found.Transaction, user)
 
 	// Guaranteeing FSM state reset
 	if user.State != domain.StateReady {

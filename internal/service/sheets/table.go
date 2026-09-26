@@ -28,6 +28,7 @@ const (
 	TypeIncome  TransactionType = "income"  // Доход
 )
 
+// TODO: Move to domain
 // Transaction представляет финансовую операцию пользователя
 type Transaction struct {
 	ID          int64           `json:"id" db:"id"`

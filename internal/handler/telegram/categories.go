@@ -7,11 +7,9 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
-	"time"
 
 	"em-finance-bot/internal/domain"
 	"em-finance-bot/internal/service/ai"
-	"em-finance-bot/internal/service/sheets"
 
 	"gopkg.in/telebot.v3"
 )
@@ -325,19 +323,19 @@ func (r *Router) handleSelectClarifiedCategory(c telebot.Context) error {
 	slog.InfoContext(ctx, "Выбрана категория: ", slog.String("category", category))
 
 	// Unmarshaling pending transaction
-	var transaction ai.ParsedTransaction
-	if err := json.Unmarshal([]byte(user.PendingTransaction), &transaction); err != nil {
+	var aiTransactionData ai.ParsedTransaction
+	if err := json.Unmarshal([]byte(user.PendingTransaction), &aiTransactionData); err != nil {
 		return fmt.Errorf("failed to unmarshal pending transaction: %w", err)
 	}
 
 	slog.InfoContext(
 		ctx,
 		"Ожидаемая транзакция",
-		slog.Any("transaction", transaction),
+		slog.Any("transaction", aiTransactionData),
 	)
 
 	// Assigning category to transaction
-	transaction.Category = category
+	aiTransactionData.Category = category
 
 	// Saving transaction to google sheets
 	nextTxID, err := r.userRepo.IncrementLastTransactionID(ctx, user.TelegramID)
@@ -352,49 +350,14 @@ func (r *Router) handleSelectClarifiedCategory(c telebot.Context) error {
 		slog.Int("transaction_id", nextTxID),
 	)
 
-	if err = r.sheetsService.SaveTransaction(ctx, user.SpreadsheetID, &sheets.Transaction{
-		ID:          int64(nextTxID),
-		UserID:      user.TelegramID,
-		Type:        sheets.TransactionType(transaction.Type),
-		Amount:      transaction.Amount,
-		Category:    transaction.Category,
-		Description: transaction.Description,
-		Date:        transaction.Date,
-		CreatedAt:   time.Now(),
-	}); err != nil {
+	transaction := aiTransactionData.ToTransaction(int64(nextTxID), user.TelegramID)
+
+	if err = r.sheetsService.SaveTransaction(ctx, user.SpreadsheetID, transaction); err != nil {
 		return err
 	}
 
 	// Send result message
-	// TODO: Refactor maybe - create a separate function in markup
-	var textResponse string
-	if transaction.Type == string(sheets.TypeIncome) {
-		textResponse = fmt.Sprintf("✅ <b>Доход записан!</b>\n\n🆔 ID: <b>#%d</b>\n💰 Сумма: <b>%.2f %s</b>\n📝 Описание: %s\n📅 Дата: %s",
-			nextTxID,
-			transaction.Amount,
-			user.Currency,
-			transaction.Description,
-			transaction.Date.Format("02.01.2006 15:04"),
-		)
-	} else {
-		textResponse = fmt.Sprintf("✅ <b>Расход записан!</b>\n\n🆔 ID: <b>#%d</b>\n💸 Сумма: <b>%.2f %s</b>\n📁 Категория: <b>%s</b>\n📝 Описание: %s\n📅 Дата: %s",
-			nextTxID,
-			transaction.Amount,
-			user.Currency,
-			transaction.Category,
-			transaction.Description,
-			transaction.Date.Format("02.01.2006 15:04"),
-		)
-	}
-
-	// Applyion inline editing buttons
-	menu := &telebot.ReplyMarkup{}
-
-	transactionIdStr := strconv.Itoa(nextTxID)
-	btnEdit := menu.Data("✏️ Изменить", btnQuickEditTransaction, transactionIdStr)
-	btnDelete := menu.Data("❌ Удалить", btnQuickDeleteTransaction, transactionIdStr)
-
-	menu.Inline(menu.Row(btnEdit, btnDelete))
+	textResponse, menu := basicTransactionMarkup(transaction, user)
 
 
 	// Delete previous clarification notification
