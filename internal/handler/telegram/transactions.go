@@ -231,3 +231,56 @@ func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, us
 
 	return nil
 }
+
+func (r *Router) sendTransactionEditingButtons(c telebot.Context) error {
+	ctx := c.Get(ContextKey).(context.Context)
+
+	// Getting transaction id from callback data
+	transactionIdStr := c.Data()
+	transactionId, err := strconv.Atoi(transactionIdStr)
+	if err != nil {
+		return fmt.Errorf("invalid transaction id in callback data (%s): %w", transactionIdStr, err)
+	}
+
+	// Getting user data
+	user, err := r.userRepo.GetByTelegramId(ctx, c.Sender().ID)
+	if err != nil {
+		return err
+	}
+
+	// Searching for an actual transaction row in sheets
+	transactionRow, err := r.sheetsService.FindTransactionByID(ctx, user.SpreadsheetID, transactionId)
+	if err != nil {
+		return err
+	}
+
+	markup := transactionEditingButtonsMarkup(transactionId)
+	text := fmt.Sprintf(
+		"✏️ <b>Редактирование операции #%d</b>\n\n"+
+			"• <b>Сумма:</b> <code>%.2f %s</code>\n"+
+			"• <b>Категория:</b> %s\n"+
+			"• <b>Описание:</b> %s\n"+
+			"• <b>Дата:</b> <code>%s</code>\n\n"+
+			"Выберите, какое поле вы хотите изменить 👇",
+		transactionRow.Transaction.ID,
+		transactionRow.Transaction.Amount,
+		user.Currency,
+		transactionRow.Transaction.Category,
+		transactionRow.Transaction.Description,
+		transactionRow.Transaction.Date.Format("02.01.2006 15:04"),
+	)
+
+	// Если переходим по клику на кнопку — лучше обновить сообщение через c.Edit,
+	// чтобы не плодить новые сообщения в чате:
+	if c.Callback() != nil {
+		return c.Edit(text, markup, telebot.ModeHTML)
+	}
+
+	return c.Send(text, markup, telebot.ModeHTML)
+}
+
+func (r *Router) handleDeleteTransaction(c telebot.Context) error {
+	fmt.Println("Transaction for deleting: ", c.Data())
+
+	return nil
+}
