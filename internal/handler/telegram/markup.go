@@ -51,14 +51,14 @@ func (r *Router) defaultCategoriesMarkup() *telebot.ReplyMarkup {
 	return markup
 }
 
-func transactionEditingButtonsMarkup(transactionId int) *telebot.ReplyMarkup {
+func transactionEditingButtonsMarkup(transactionID int) *telebot.ReplyMarkup {
 	markup := &telebot.ReplyMarkup{}
-	transactionIdStr := strconv.Itoa(transactionId)
+	transactionIDStr := strconv.Itoa(transactionID)
 
-	btnEdit := markup.Data("🏷 Сменить категорию", btnEditTransactionCategory, transactionIdStr)
-	btnEditAmount := markup.Data("💰 Изменить сумму", btnEditTransactionAmount, transactionIdStr)
-	btnEditDescription := markup.Data("✏️ Изменить описание", btnEditTransactionDescription, transactionIdStr)
-	btnCancel := markup.Data("🔙 Отменить", btnCancelTransactionEditing, transactionIdStr)
+	btnEdit := markup.Data("🏷 Сменить категорию", btnEditTransactionCategory, transactionIDStr)
+	btnEditAmount := markup.Data("💰 Изменить сумму", btnEditTransactionAmount, transactionIDStr)
+	btnEditDescription := markup.Data("✏️ Изменить описание", btnEditTransactionDescription, transactionIDStr)
+	btnCancel := markup.Data("🔙 Отменить", btnCancelTransactionEditing, transactionIDStr)
 
 	// 2x2 grid
 	markup.Inline(
@@ -103,10 +103,10 @@ func basicTransactionMarkup(transaction *sheets.Transaction, user *domain.User) 
 
 	// Creating buttons
 	menu := &telebot.ReplyMarkup{}
-	transactionIdStr := strconv.FormatInt(transaction.ID, 10)
+	transactionIDStr := strconv.FormatInt(transaction.ID, 10)
 
-	btnEdit := menu.Data("✏️ Изменить", btnQuickEditTransaction, transactionIdStr)
-	btnDelete := menu.Data("❌ Удалить", btnQuickDeleteTransaction, transactionIdStr)
+	btnEdit := menu.Data("✏️ Изменить", btnQuickEditTransaction, transactionIDStr)
+	btnDelete := menu.Data("❌ Удалить", btnQuickDeleteTransaction, transactionIDStr)
 
 	menu.Inline(menu.Row(btnEdit, btnDelete))
 
@@ -138,6 +138,14 @@ func transactionCategoriesMarkup(transactionID int, categories []string) *telebo
 	rows = append(rows, markup.Row(btnBack))
 
 	markup.Inline(rows...)
+
+	return markup
+}
+
+func cancelTransactionEditingMarkup(transactionID int64) *telebot.ReplyMarkup {
+	markup := &telebot.ReplyMarkup{}
+	btnCancel := markup.Data("🔙 Отмена", btnCancelTransactionEditing, strconv.FormatInt(transactionID, 10))
+	markup.Inline(markup.Row(btnCancel))
 
 	return markup
 }

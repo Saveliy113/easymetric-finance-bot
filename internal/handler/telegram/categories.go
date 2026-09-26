@@ -10,7 +10,6 @@ import (
 
 	"em-finance-bot/internal/domain"
 	"em-finance-bot/internal/service/ai"
-	"em-finance-bot/internal/service/sheets"
 
 	"gopkg.in/telebot.v3"
 )
@@ -339,19 +338,19 @@ func (r *Router) handleSelectClarifiedCategory(c telebot.Context) error {
 	aiTransactionData.Category = category
 
 	// Saving transaction to google sheets
-	nextTxID, err := r.userRepo.IncrementLastTransactionID(ctx, user.TelegramID)
+	nextTransactionID, err := r.userRepo.IncrementLastTransactionID(ctx, user.TelegramID)
 	if err != nil {
 		return fmt.Errorf("error incrementing transaction id: %w", err)
 	}
-	user.LastTransactionID = nextTxID
+	user.LastTransactionID = nextTransactionID
 
 	slog.InfoContext(ctx, "Сохраняем операцию в Google Таблицу",
 		slog.Int64("user_id", user.TelegramID),
 		slog.String("spreadsheet_id", user.SpreadsheetID),
-		slog.Int("transaction_id", nextTxID),
+		slog.Int("transaction_id", nextTransactionID),
 	)
 
-	transaction := aiTransactionData.ToTransaction(int64(nextTxID), user.TelegramID)
+	transaction := aiTransactionData.ToTransaction(int64(nextTransactionID), user.TelegramID)
 
 	if err = r.sheetsService.SaveTransaction(ctx, user.SpreadsheetID, transaction); err != nil {
 		return err
@@ -448,10 +447,10 @@ func (r *Router) handleSheetStep(ctx context.Context, c telebot.Context) error {
 
 func (r *Router) sendUserCategoriesForEditing(c telebot.Context) error {
 	ctx := c.Get(ContextKey).(context.Context)
-	transactionIdStr := c.Data()
-	transactionId, err := strconv.Atoi(transactionIdStr)
+	transactionIDStr := c.Data()
+	transactionID, err := strconv.Atoi(transactionIDStr)
 	if err != nil {
-		return fmt.Errorf("invalid transaction id in callback data (%s): %w", transactionIdStr, err)
+		return fmt.Errorf("invalid transaction id in callback data (%s): %w", transactionIDStr, err)
 	}
 
 	// Getting user from the db
@@ -467,12 +466,12 @@ func (r *Router) sendUserCategoriesForEditing(c telebot.Context) error {
 	}
 
 	// Searching for an actual transaction row in sheets
-	transactionRow, err := r.sheetsService.FindTransactionByID(ctx, user.SpreadsheetID, transactionId)
+	transactionRow, err := r.sheetsService.FindTransactionByID(ctx, user.SpreadsheetID, transactionID)
 	if err != nil {
 		return err
 	}
 
-	categoriesMarkup := transactionCategoriesMarkup(transactionId, categories)
+	categoriesMarkup := transactionCategoriesMarkup(transactionID, categories)
 	text := fmt.Sprintf(
 		"✏️ <b>Редактирование операции #%d</b>\n\n"+
 			"• Текущая выбранная категория: <b>%s</b>\n\n"+
@@ -539,11 +538,8 @@ func (r *Router) changeTransactionCategory(c telebot.Context) error {
 			slog.Any("error", err),
 		)
 
-		// Возвращаем лаконичное подтверждение, но СОХРАНЯЕМ стандартные кнопки управления!
-		fallbackTx := &sheets.Transaction{ID: transactionID, Category: selectedCategory}
-		_, fallbackMenu := basicTransactionMarkup(fallbackTx, user)
 		fallbackText := fmt.Sprintf("✅ Категория операции #%d изменена на <b>%s</b>!", transactionID, selectedCategory)
-		return c.Edit(fallbackText, fallbackMenu, telebot.ModeHTML)
+		return c.Edit(fallbackText, telebot.ModeHTML)
 	}
 
 	// Send result message
