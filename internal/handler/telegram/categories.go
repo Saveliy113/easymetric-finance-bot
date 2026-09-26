@@ -346,6 +346,7 @@ func (r *Router) handleSelectClarifiedCategory(c telebot.Context) error {
 	if err != nil {
 		return fmt.Errorf("error incrementing transaction id: %w", err)
 	}
+	user.LastTransactionID = nextTxID
 
 	slog.InfoContext(ctx, "Сохраняем операцию в Google Таблицу",
 		slog.Int64("user_id", user.TelegramID),
@@ -381,7 +382,26 @@ func (r *Router) handleSelectClarifiedCategory(c telebot.Context) error {
 	}
 
 	// Send result message
-	return c.Send("✅ <b>Транзакция успешно добавлена!</b>", telebot.ModeHTML)
+	// TODO: Refactor maybe - create a separate function in markup
+	var textResponse string
+	if transaction.Type == string(sheets.TypeIncome) {
+		textResponse = fmt.Sprintf("✅ <b>Доход записан!</b>\n\n🆔 ID: <b>#%d</b>\n💰 Сумма: <b>%.2f</b>\n📝 Описание: %s\n📅 Дата: %s",
+			nextTxID,
+			transaction.Amount,
+			transaction.Description,
+			transaction.Date.Format("02.01.2006 15:04"),
+		)
+	} else {
+		textResponse = fmt.Sprintf("✅ <b>Расход записан!</b>\n\n🆔 ID: <b>#%d</b>\n💸 Сумма: <b>%.2f</b>\n📁 Категория: <b>%s</b>\n📝 Описание: %s\n📅 Дата: %s",
+			nextTxID,
+			transaction.Amount,
+			transaction.Category,
+			transaction.Description,
+			transaction.Date.Format("02.01.2006 15:04"),
+		)
+	}
+
+	return c.Send(textResponse, telebot.ModeHTML)
 }
 
 func (r *Router) handleCancelTransactionClarification(c telebot.Context) error {

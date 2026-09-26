@@ -18,6 +18,7 @@ type SheetsService struct {
 	srv *sheets.Service
 }
 
+// TODO: Move to domain maybe
 type TransactionType string
 
 const (
