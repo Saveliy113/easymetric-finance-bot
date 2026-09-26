@@ -368,4 +368,75 @@ func (s *SheetsService) UpdateTransactionCategory(ctx context.Context, spreadshe
 
 	return nil
 }
-	
+
+func (s *SheetsService) UpdateTransactionAmount(ctx context.Context, spreadsheetID string, transactionID int64, newAmount float64) error {
+	// Searching target row number by transaction id
+	transaction, err := s.FindTransactionByID(ctx, spreadsheetID, int(transactionID))
+	if err != nil {
+		return err
+	}
+
+	// Defining Range (I - amount column)
+	cellRange := fmt.Sprintf("'Дашборд'!I%d", transaction.RowIndex)
+
+	valRange := &sheets.ValueRange{
+		Values: [][]interface{}{{newAmount}},
+	}
+
+	slog.InfoContext(ctx, "Обновление суммы транзакции в Google Таблице",
+		slog.Int64("transaction_id", transactionID),
+		slog.Float64("new_amount", newAmount),
+	)
+
+	// Updating amount cell
+	_, err = s.srv.Spreadsheets.Values.Update(spreadsheetID, cellRange, valRange).
+		ValueInputOption("USER_ENTERED").
+		Context(ctx).
+		Do()
+	if err != nil {
+		return err
+	}
+
+	slog.InfoContext(ctx, "Сумма операции успешно обновлена в таблице",
+		slog.Int64("transaction_id", transactionID),
+		slog.Float64("new_amount", newAmount),
+	)
+
+	return nil
+}
+
+func (s *SheetsService) UpdateTransactionDescription(ctx context.Context, spreadsheetID string, transactionID int64, newDescription string) error {
+	// Searching target row number by transaction id
+	transaction, err := s.FindTransactionByID(ctx, spreadsheetID, int(transactionID))
+	if err != nil {
+		return err
+	}
+
+	// Defining Range (J - description column)
+	cellRange := fmt.Sprintf("'Дашборд'!J%d", transaction.RowIndex)
+
+	valRange := &sheets.ValueRange{
+		Values: [][]interface{}{{newDescription}},
+	}
+
+	slog.InfoContext(ctx, "Обновление описания транзакции в Google Таблице",
+		slog.Int64("transaction_id", transactionID),
+		slog.String("new_description", newDescription),
+	)
+
+	// Updating description cell
+	_, err = s.srv.Spreadsheets.Values.Update(spreadsheetID, cellRange, valRange).
+		ValueInputOption("USER_ENTERED").
+		Context(ctx).
+		Do()
+	if err != nil {
+		return err
+	}
+
+	slog.InfoContext(ctx, "Описание операции успешно обновлено в таблице",
+		slog.Int64("transaction_id", transactionID),
+		slog.String("new_description", newDescription),
+	)
+
+	return nil
+}
