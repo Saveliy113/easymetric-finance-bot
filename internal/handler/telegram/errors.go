@@ -22,39 +22,53 @@ type errorDescriptor struct {
 func (r *Router) getErrorDescriptors() []errorDescriptor {
 	return []errorDescriptor{
 		{
-			target:    domain.ErrUserNotFound,
-			logMsg:    "Пользователь не найден в системе",
-			renderMsg: func(r *Router) string { return "Похоже, что ты еще не зарегистрирован. Отправь /start для начала работы." },
+			target: domain.ErrUserNotFound,
+			logMsg: "Пользователь не найден в системе",
+			renderMsg: func(r *Router) string {
+				return "Похоже, что ты еще не зарегистрирован. Отправь /start для начала работы."
+			},
 		},
 		{
-			target:    domain.ErrInvalidCity,
-			logMsg:    "Некорректный или пустой город",
-			renderMsg: func(r *Router) string { return "Пожалуйста, напиши корректное название города. Например, Алматы, Астана, Москва:" },
+			target: domain.ErrInvalidCity,
+			logMsg: "Некорректный или пустой город",
+			renderMsg: func(r *Router) string {
+				return "Пожалуйста, напиши корректное название города. Например, Алматы, Астана, Москва:"
+			},
 		},
 		{
-			target:    domain.ErrParsingCity,
-			logMsg:    "Ошибка при определении часового пояса и города",
-			renderMsg: func(r *Router) string { return "Не удалось распознать город 😔\nПроверь корректность названия и попробуй написать ещё раз:" },
+			target: domain.ErrParsingCity,
+			logMsg: "Ошибка при определении часового пояса и города",
+			renderMsg: func(r *Router) string {
+				return "Не удалось распознать город 😔\nПроверь корректность названия и попробуй написать ещё раз:"
+			},
 		},
 		{
-			target:    domain.ErrInvalidCategories,
-			logMsg:    "Некорректный список категорий",
-			renderMsg: func(r *Router) string { return "Пожалуйста, отправь список категорий через запятую. Например: Продукты, Кафе, Транспорт, Развлечения" },
+			target: domain.ErrInvalidCategories,
+			logMsg: "Некорректный список категорий",
+			renderMsg: func(r *Router) string {
+				return "Пожалуйста, отправь список категорий через запятую. Например: Продукты, Кафе, Транспорт, Развлечения"
+			},
 		},
 		{
-			target:    domain.ErrParsingCategories,
-			logMsg:    "Ошибка при обработке категорий в Gemini",
-			renderMsg: func(r *Router) string { return "Не удалось распознать категории 😔\nПопробуй написать ещё раз через запятую:" },
+			target: domain.ErrParsingCategories,
+			logMsg: "Ошибка при обработке категорий в Gemini",
+			renderMsg: func(r *Router) string {
+				return "Не удалось распознать категории 😔\nПопробуй написать ещё раз через запятую:"
+			},
 		},
 		{
-			target:    domain.ErrInvalidSheetURL,
-			logMsg:    "Некорректная ссылка на Google Таблицу",
-			renderMsg: func(r *Router) string { return "⚠️ Не удалось извлечь ID таблицы. Убедись, что отправляешь корректную ссылку на Google Таблицу:" },
+			target: domain.ErrInvalidSheetURL,
+			logMsg: "Некорректная ссылка на Google Таблицу",
+			renderMsg: func(r *Router) string {
+				return "⚠️ Не удалось извлечь ID таблицы. Убедись, что отправляешь корректную ссылку на Google Таблицу:"
+			},
 		},
 		{
-			target:    domain.ErrSheetNotFound,
-			logMsg:    "Google Таблица не найдена",
-			renderMsg: func(r *Router) string { return "⚠️ Таблица не найдена. Проверь ссылку и отправь её ещё раз:" },
+			target: domain.ErrSheetNotFound,
+			logMsg: "Google Таблица не найдена",
+			renderMsg: func(r *Router) string {
+				return "⚠️ Таблица не найдена. Проверь ссылку и отправь её ещё раз:"
+			},
 		},
 		{
 			target: domain.ErrSheetAccessDenied,
@@ -70,45 +84,81 @@ func (r *Router) getErrorDescriptors() []errorDescriptor {
 			parseMode: telebot.ModeMarkdown,
 		},
 		{
-			target:    domain.ErrGoogleAPIFailed,
-			logMsg:    "Ошибка доступа к Google API",
-			renderMsg: func(r *Router) string { return "⚠️ Ошибка доступа к Google API. Пожалуйста, попробуй ещё раз через пару минут." },
+			target: domain.ErrGoogleAPIFailed,
+			logMsg: "Ошибка доступа к Google API",
+			renderMsg: func(r *Router) string {
+				return "⚠️ Ошибка доступа к Google API. Пожалуйста, попробуй ещё раз через пару минут."
+			},
 		},
 		{
-			target:    domain.ErrSheetNotConfigured,
-			logMsg:    "Google Таблица не настроена",
-			renderMsg: func(r *Router) string { return "⚠️ Google Таблица ещё не подключена. Пожалуйста, заверши настройку с помощью команды /start." },
+			target: domain.ErrSheetNotConfigured,
+			logMsg: "Google Таблица не настроена",
+			renderMsg: func(r *Router) string {
+				return "⚠️ Google Таблица ещё не подключена. Пожалуйста, заверши настройку с помощью команды /start."
+			},
 		},
 		{
-			target:    domain.ErrVoiceDownloadFailed,
-			logMsg:    "Не удалось загрузить голосовое сообщение",
-			renderMsg: func(r *Router) string { return "⚠️ Не удалось загрузить голосовое сообщение. Попробуй ещё раз или отправь текстом." },
+			target: domain.ErrVoiceDownloadFailed,
+			logMsg: "Не удалось загрузить голосовое сообщение",
+			renderMsg: func(r *Router) string {
+				return "⚠️ Не удалось загрузить голосовое сообщение. Попробуй ещё раз или отправь текстом."
+			},
 		},
 		{
-			target:    domain.ErrVoiceTranscriptionFailed,
-			logMsg:    "Не удалось расшифровать голосовое сообщение",
-			renderMsg: func(r *Router) string { return "⚠️ Не удалось разобрать слова в голосовом сообщении. Попробуй записать чётче или написать текстом." },
+			target: domain.ErrVoiceTranscriptionFailed,
+			logMsg: "Не удалось расшифровать голосовое сообщение",
+			renderMsg: func(r *Router) string {
+				return "⚠️ Не удалось разобрать слова в голосовом сообщении. Попробуй записать чётче или написать текстом."
+			},
 		},
 		{
-			target:    domain.ErrEmptyTransaction,
-			logMsg:    "Пустой текст финансовой операции",
-			renderMsg: func(r *Router) string { return "⚠️ Не удалось распознать сообщение. Попробуй ещё раз." },
+			target: domain.ErrEmptyTransaction,
+			logMsg: "Пустой текст финансовой операции",
+			renderMsg: func(r *Router) string {
+				return "⚠️ Не удалось распознать сообщение. Попробуй ещё раз."
+			},
 		},
 		{
-			target:    domain.ErrInvalidTransaction,
-			logMsg:    "Не удалось распознать финансовую операцию",
-			renderMsg: func(r *Router) string { return "⚠️ Не удалось распознать операцию или сумму.\nПример: `Такси 1200` или `Зарплата 350000`" },
+			target: domain.ErrInvalidTransaction,
+			logMsg: "Не удалось распознать финансовую операцию",
+			renderMsg: func(r *Router) string {
+				return "⚠️ Не удалось распознать операцию или сумму.\nПример: `Такси 1200` или `Зарплата 350000`"
+			},
 			parseMode: telebot.ModeMarkdown,
 		},
 		{
-			target:    domain.ErrInvalidTransactionDate,
-			logMsg:    "Ошибка разбора даты операции",
-			renderMsg: func(r *Router) string { return "⚠️ Не удалось определить дату операции. Попробуй ещё раз." },
+			target: domain.ErrInvalidTransactionDate,
+			logMsg: "Ошибка разбора даты операции",
+			renderMsg: func(r *Router) string {
+				return "⚠️ Не удалось определить дату операции. Попробуй ещё раз."
+			},
 		},
 		{
-			target:    domain.ErrTransactionClarificationExpired,
-			logMsg:    "Истекло время ожидания уточнения транзакции",
-			renderMsg: func(r *Router) string { return "⚠️ Истекло время ожидания уточнения транзакции. Отправь операцию заново." },
+			target: domain.ErrTransactionClarificationExpired,
+			logMsg: "Истекло время ожидания уточнения транзакции",
+			renderMsg: func(r *Router) string {
+				return "⚠️ Истекло время ожидания уточнения транзакции. Отправь операцию заново."
+			},
+		},
+		{
+			target:    domain.ErrTransactionNotFound,
+			logMsg:    "Транзакция не найдена",
+			renderMsg: func(r *Router) string { return "⚠️ Транзакция не найдена." },
+		},
+		{
+			target: domain.ErrInvalidTransactionAmount,
+			logMsg: "Некорректная сумма транзакции",
+			renderMsg: func(r *Router) string {
+				return "⚠️ Пожалуйста, введите корректное положительное число (например: <code>3500</code> или <code>250.50</code>):"
+			},
+			parseMode: telebot.ModeHTML,
+		},
+		{
+			target: domain.ErrEmptyTransactionDescription,
+			logMsg: "Пустое описание транзакции",
+			renderMsg: func(r *Router) string {
+				return "⚠️ Описание не может быть пустым. Введите новое описание:"
+			},
 		},
 	}
 }

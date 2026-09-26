@@ -5,12 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
-	"time"
 
 	"em-finance-bot/internal/domain"
 	"em-finance-bot/internal/service/ai"
-	"em-finance-bot/internal/service/sheets"
 
 	"gopkg.in/telebot.v3"
 )
@@ -298,9 +297,6 @@ func (r *Router) handleSelectClarifiedCategory(c telebot.Context) error {
 	// Responding to user
 	_ = c.Respond()
 
-	// Delete inline clarification buttons
-	_, _ = r.bot.EditReplyMarkup(c.Message(), nil)
-
 	// Checking that user still in AwaitingCategoryClarification state
 	slog.InfoContext(
 		ctx, "Проверка состяния пользователя (ожидание уточнения категории транзакции)",
@@ -327,47 +323,65 @@ func (r *Router) handleSelectClarifiedCategory(c telebot.Context) error {
 	slog.InfoContext(ctx, "Выбрана категория: ", slog.String("category", category))
 
 	// Unmarshaling pending transaction
-	var transaction ai.ParsedTransaction
-	if err := json.Unmarshal([]byte(user.PendingTransaction), &transaction); err != nil {
+	var aiTransactionData ai.ParsedTransaction
+	if err := json.Unmarshal([]byte(user.PendingTransaction), &aiTransactionData); err != nil {
 		return fmt.Errorf("failed to unmarshal pending transaction: %w", err)
 	}
 
 	slog.InfoContext(
 		ctx,
 		"Ожидаемая транзакция",
-		slog.Any("transaction", transaction),
+		slog.Any("transaction", aiTransactionData),
 	)
 
 	// Assigning category to transaction
-	transaction.Category = category
+	aiTransactionData.Category = category
 
 	// Saving transaction to google sheets
-	nextTxID, err := r.userRepo.IncrementLastTransactionID(ctx, user.TelegramID)
+	nextTransactionID, err := r.userRepo.IncrementLastTransactionID(ctx, user.TelegramID)
 	if err != nil {
 		return fmt.Errorf("error incrementing transaction id: %w", err)
 	}
-	user.LastTransactionID = nextTxID
+	user.LastTransactionID = nextTransactionID
 
 	slog.InfoContext(ctx, "Сохраняем операцию в Google Таблицу",
 		slog.Int64("user_id", user.TelegramID),
 		slog.String("spreadsheet_id", user.SpreadsheetID),
-		slog.Int("transaction_id", nextTxID),
+		slog.Int("transaction_id", nextTransactionID),
 	)
 
-	if err = r.sheetsService.SaveTransaction(ctx, user.SpreadsheetID, &sheets.Transaction{
-		ID:          int64(nextTxID),
-		UserID:      user.TelegramID,
-		Type:        sheets.TransactionType(transaction.Type),
-		Amount:      transaction.Amount,
-		Category:    transaction.Category,
-		Description: transaction.Description,
-		Date:        transaction.Date,
-		CreatedAt:   time.Now(),
-	}); err != nil {
+	transaction := aiTransactionData.ToTransaction(int64(nextTransactionID), user.TelegramID)
+
+	if err = r.sheetsService.SaveTransaction(ctx, user.SpreadsheetID, transaction); err != nil {
 		return err
 	}
 
-	// Cleaning pending transaction
+	// Send result message
+	textResponse, menu := basicTransactionMarkup(transaction, user)
+
+	// Delete previous clarification notification
+	_ = r.bot.Delete(c.Message())
+
+	// Delete inline clarification buttons
+	_, _ = r.bot.EditReplyMarkup(c.Message(), nil)
+
+	sentMessage, err := r.bot.Send(c.Chat(), textResponse, menu, telebot.ModeHTML)
+	if err != nil {
+		return err
+	}
+
+	// Cleaning inline editing buttons
+	if user.LastMessageID > 0 {
+		// Creating message for telebot
+		prevMsg := &telebot.Message{
+			ID:   user.LastMessageID,
+			Chat: &telebot.Chat{ID: user.TelegramID},
+		}
+		// Removing inline buttons for previous message
+		_, _ = r.bot.EditReplyMarkup(prevMsg, nil)
+	}
+
+	// Updating user (reseting state, saving last sent message id)
 	slog.InfoContext(
 		ctx,
 		"Очистка pending-транзакции и установка состояния Ready",
@@ -376,32 +390,13 @@ func (r *Router) handleSelectClarifiedCategory(c telebot.Context) error {
 
 	user.PendingTransaction = ""
 	user.State = domain.StateReady
+	user.LastMessageID = sentMessage.ID
 
 	if err := r.userRepo.Upsert(ctx, user); err != nil {
 		return err
 	}
 
-	// Send result message
-	// TODO: Refactor maybe - create a separate function in markup
-	var textResponse string
-	if transaction.Type == string(sheets.TypeIncome) {
-		textResponse = fmt.Sprintf("✅ <b>Доход записан!</b>\n\n🆔 ID: <b>#%d</b>\n💰 Сумма: <b>%.2f</b>\n📝 Описание: %s\n📅 Дата: %s",
-			nextTxID,
-			transaction.Amount,
-			transaction.Description,
-			transaction.Date.Format("02.01.2006 15:04"),
-		)
-	} else {
-		textResponse = fmt.Sprintf("✅ <b>Расход записан!</b>\n\n🆔 ID: <b>#%d</b>\n💸 Сумма: <b>%.2f</b>\n📁 Категория: <b>%s</b>\n📝 Описание: %s\n📅 Дата: %s",
-			nextTxID,
-			transaction.Amount,
-			transaction.Category,
-			transaction.Description,
-			transaction.Date.Format("02.01.2006 15:04"),
-		)
-	}
-
-	return c.Send(textResponse, telebot.ModeHTML)
+	return nil
 }
 
 func (r *Router) handleCancelTransactionClarification(c telebot.Context) error {
@@ -412,10 +407,14 @@ func (r *Router) handleCancelTransactionClarification(c telebot.Context) error {
 
 	// Getting user
 	user, err := r.userRepo.GetByTelegramId(ctx, c.Sender().ID)
-	if err == nil && user != nil {
-		user.State = domain.StateReady
-		user.PendingTransaction = ""
-		_ = r.userRepo.Upsert(ctx, user)
+	if err != nil {
+		return err
+	}
+
+	user.State = domain.StateReady
+	user.PendingTransaction = ""
+	if err := r.userRepo.Upsert(ctx, user); err != nil {
+		return err
 	}
 
 	_, _ = r.bot.EditReplyMarkup(c.Message(), nil)
@@ -444,4 +443,107 @@ func (r *Router) handleSheetStep(ctx context.Context, c telebot.Context) error {
 	}
 
 	return c.Send(photo, telebot.ModeHTML)
+}
+
+func (r *Router) sendUserCategoriesForEditing(c telebot.Context) error {
+	ctx := c.Get(ContextKey).(context.Context)
+	transactionIDStr := c.Data()
+	transactionID, err := strconv.Atoi(transactionIDStr)
+	if err != nil {
+		return fmt.Errorf("invalid transaction id in callback data (%s): %w", transactionIDStr, err)
+	}
+
+	// Getting user from the db
+	user, err := r.userRepo.GetByTelegramId(ctx, c.Sender().ID)
+	if err != nil {
+		return err
+	}
+
+	// Unmarshal user categories
+	var categories []string
+	if err := json.Unmarshal([]byte(user.CategoriesCache), &categories); err != nil {
+		return fmt.Errorf("failed to unmarshal user categories: %w", err)
+	}
+
+	// Searching for an actual transaction row in sheets
+	transactionRow, err := r.sheetsService.FindTransactionByID(ctx, user.SpreadsheetID, transactionID)
+	if err != nil {
+		return err
+	}
+
+	categoriesMarkup := transactionCategoriesMarkup(transactionID, categories)
+	text := fmt.Sprintf(
+		"✏️ <b>Редактирование операции #%d</b>\n\n"+
+			"• Текущая выбранная категория: <b>%s</b>\n\n"+
+			"📝 Выбери новую категорию:",
+		transactionRow.Transaction.ID,
+		transactionRow.Transaction.Category,
+	)
+
+	// Если переходим по клику на кнопку — лучше обновить сообщение через c.Edit,
+	// чтобы не плодить новые сообщения в чате:
+	if c.Callback() != nil {
+		return c.Edit(text, categoriesMarkup, telebot.ModeHTML)
+	}
+
+	return c.Send(text, categoriesMarkup, telebot.ModeHTML)
+}
+
+func (r *Router) changeTransactionCategory(c telebot.Context) error {
+	ctx := c.Get(ContextKey).(context.Context)
+	_ = c.Respond()
+
+	// Getting category and transaction id
+	payload := c.Data()
+	parts := strings.SplitN(payload, "|", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid callback data format: %s", payload)
+	}
+
+	// Extracting transaction id
+	transactionID, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid transaction id in callback data (%s): %w", parts[0], err)
+	}
+
+	// Getting user from the db
+	user, err := r.userRepo.GetByTelegramId(ctx, c.Sender().ID)
+	if err != nil {
+		return err
+	}
+
+	// Unmarshaling user categories to resolve category by index
+	var categories []string
+	if err := json.Unmarshal([]byte(user.CategoriesCache), &categories); err != nil {
+		return fmt.Errorf("failed to unmarshal user categories: %w", err)
+	}
+
+	catIdx, err := strconv.Atoi(parts[1])
+	if err != nil || catIdx < 0 || catIdx >= len(categories) {
+		return fmt.Errorf("invalid category index in callback data (%s)", parts[1])
+	}
+	selectedCategory := categories[catIdx]
+
+	// Updating transaction category in sheets
+	err = r.sheetsService.UpdateTransactionCategory(ctx, user.SpreadsheetID, transactionID, selectedCategory)
+	if err != nil {
+		return err
+	}
+
+	// Getting updated transaction data from sheet
+	transaction, err := r.sheetsService.FindTransactionByID(ctx, user.SpreadsheetID, int(transactionID))
+	if err != nil {
+		slog.WarnContext(ctx, "Не удалось перечитать операцию после смены категории",
+			slog.Int64("tx_id", transactionID),
+			slog.Any("error", err),
+		)
+
+		fallbackText := fmt.Sprintf("✅ Категория операции #%d изменена на <b>%s</b>!", transactionID, selectedCategory)
+		return c.Edit(fallbackText, telebot.ModeHTML)
+	}
+
+	// Send result message
+	textResponse, menu := basicTransactionMarkup(transaction.Transaction, user)
+
+	return c.Edit(textResponse, menu, telebot.ModeHTML)
 }
