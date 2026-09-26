@@ -17,16 +17,17 @@ const (
 )
 
 type User struct {
-	ID              int
-	TelegramID      int64
-	SpreadsheetID   string
-	LastTransactionID int
-	PendingTransaction string
-	Username        string
-	State           UserState
-	Timezone        string
-	Currency        string
-	CategoriesCache string
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID                 int
+	Username           string
+	State              UserState
+	Timezone           string
+	Currency           string
+	CategoriesCache    string
+	TelegramID         int64
+	SpreadsheetID      string
+	LastTransactionID  int    // Last inserted transaction in google sheets
+	LastMessageID      int    // Last message sent to user in chat
+	PendingTransaction string // Transaction waiting for clarification
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -170,21 +171,63 @@ func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, us
 
 	var textResponse string
 	if transaction.Type == string(sheets.TypeIncome) {
-		textResponse = fmt.Sprintf("✅ <b>Доход записан!</b>\n\n🆔 ID: <b>#%d</b>\n💰 Сумма: <b>%.2f</b>\n📝 Описание: %s\n📅 Дата: %s",
+		textResponse = fmt.Sprintf("✅ <b>Доход записан!</b>\n\n🆔 ID: <b>#%d</b>\n💰 Сумма: <b>%.2f %s</b>\n📝 Описание: %s\n📅 Дата: %s",
 			nextTxID,
 			transaction.Amount,
+			user.Currency,
 			transaction.Description,
 			transaction.Date.Format("02.01.2006 15:04"),
 		)
 	} else {
-		textResponse = fmt.Sprintf("✅ <b>Расход записан!</b>\n\n🆔 ID: <b>#%d</b>\n💸 Сумма: <b>%.2f</b>\n📁 Категория: <b>%s</b>\n📝 Описание: %s\n📅 Дата: %s",
+		textResponse = fmt.Sprintf("✅ <b>Расход записан!</b>\n\n🆔 ID: <b>#%d</b>\n💸 Сумма: <b>%.2f %s</b>\n📁 Категория: <b>%s</b>\n📝 Описание: %s\n📅 Дата: %s",
 			nextTxID,
 			transaction.Amount,
+			user.Currency,
 			transaction.Category,
 			transaction.Description,
 			transaction.Date.Format("02.01.2006 15:04"),
 		)
 	}
 
-	return c.Send(textResponse, telebot.ModeHTML)
+	// Applyion inline editing buttons
+	menu := &telebot.ReplyMarkup{}
+
+	transactionIdStr := strconv.Itoa(nextTxID)
+	btnEdit := menu.Data("✏️ Изменить", btnQuickEditTransaction, transactionIdStr)
+	btnDelete := menu.Data("❌ Удалить", btnQuickDeleteTransaction, transactionIdStr)
+
+	menu.Inline(menu.Row(btnEdit, btnDelete))
+
+	sentMessage, err := r.bot.Send(c.Chat(), textResponse, menu, telebot.ModeHTML)
+	if err != nil {
+		return err
+	}
+
+	// Cleaning inline editing buttons
+	if user.LastMessageID > 0 {
+		// Creating message for telebot
+		prevMsg := &telebot.Message{
+			ID:   user.LastMessageID,
+			Chat: &telebot.Chat{ID: user.TelegramID},
+		}
+		// Removing inline buttons for previous message
+		_, _ = r.bot.EditReplyMarkup(prevMsg, nil)
+	}
+
+	// Updating user (reseting state, saving last sent message id)
+	slog.InfoContext(
+		ctx,
+		"Очистка pending-транзакции и установка состояния Ready",
+		slog.Int64("user_id", user.TelegramID),
+	)
+
+	user.PendingTransaction = ""
+	user.State = domain.StateReady
+	user.LastMessageID = sentMessage.ID
+
+	if err := r.userRepo.Upsert(ctx, user); err != nil {
+		return err
+	}
+
+	return nil
 }

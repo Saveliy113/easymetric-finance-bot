@@ -24,6 +24,7 @@ func (r *UserRepository) GetByTelegramId(ctx context.Context, telegramId int64) 
 			telegram_id as telegramId,
 			spreadsheet_id as spreadsheetId,
 			last_transaction_id as lastTransactionId,
+			last_message_id as lastMessageId,
 			pending_transaction as pendingTransaction,
 			username,
 			state,
@@ -41,6 +42,7 @@ func (r *UserRepository) GetByTelegramId(ctx context.Context, telegramId int64) 
 		u              domain.User
 		spreadsheetID  sql.NullString
 		lastTxID       sql.NullInt64
+		lastMessageID  sql.NullInt64
 		pendingTx      sql.NullString
 		username       sql.NullString
 		categoriesJSON sql.NullString
@@ -54,6 +56,7 @@ func (r *UserRepository) GetByTelegramId(ctx context.Context, telegramId int64) 
 		&u.TelegramID,
 		&spreadsheetID,
 		&lastTxID,
+		&lastMessageID,
 		&pendingTx,
 		&username,
 		&stateStr,
@@ -80,6 +83,10 @@ func (r *UserRepository) GetByTelegramId(ctx context.Context, telegramId int64) 
 
 	if lastTxID.Valid {
 		u.LastTransactionID = int(lastTxID.Int64)
+	}
+
+	if lastMessageID.Valid {
+		u.LastMessageID = int(lastMessageID.Int64)
 	}
 
 	if pendingTx.Valid {
@@ -140,6 +147,11 @@ func (r *UserRepository) Upsert(ctx context.Context, user *domain.User) error {
 		lastTxIDVal = sql.NullInt64{Int64: int64(user.LastTransactionID), Valid: true}
 	}
 
+	var lastMessageIDVal sql.NullInt64
+	if user.LastMessageID > 0 {
+		lastMessageIDVal = sql.NullInt64{Int64: int64(user.LastMessageID), Valid: true}
+	}
+
 	// Handling timezone and currency as sql.NullString to avoid inserting empty strings
 	var timezoneVal sql.NullString
 	if user.Timezone != "" {
@@ -160,10 +172,11 @@ func (r *UserRepository) Upsert(ctx context.Context, user *domain.User) error {
 			currency, 
 			spreadsheet_id, 
 			last_transaction_id,
+			last_message_id,
 			pending_transaction,
 			categories_cache, 
 			updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(telegram_id) DO UPDATE SET
 			username            = excluded.username,
 			state               = excluded.state,
@@ -171,6 +184,7 @@ func (r *UserRepository) Upsert(ctx context.Context, user *domain.User) error {
 			currency            = COALESCE(excluded.currency, users.currency),
 			spreadsheet_id      = COALESCE(excluded.spreadsheet_id, users.spreadsheet_id),
 			last_transaction_id = COALESCE(excluded.last_transaction_id, users.last_transaction_id, 0),
+			last_message_id     = COALESCE(excluded.last_message_id, users.last_message_id, 0),
 			categories_cache    = COALESCE(excluded.categories_cache, users.categories_cache),
 			pending_transaction = COALESCE(excluded.pending_transaction, users.pending_transaction, ""),
 			updated_at          = CURRENT_TIMESTAMP;
@@ -184,6 +198,7 @@ func (r *UserRepository) Upsert(ctx context.Context, user *domain.User) error {
 		currencyVal,
 		spreadsheetIDVal,
 		lastTxIDVal,
+		lastMessageIDVal,
 		pendingTxVal,
 		categoriesJSON,
 	)

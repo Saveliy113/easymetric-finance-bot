@@ -8,6 +8,9 @@ const (
 	btnIDCustomCat                      = "custom_categories"
 	btnIDSelectClarifiedCategory        = "select_clarified_category"
 	btnIDCancelTransactionClarification = "cancel_transaction_clarification"
+	btnQuickEditTransaction             = "quick_edit_transaction"
+	btnQuickDeleteTransaction           = "quick_delete_transaction"
+	
 )
 
 func (r *Router) startConfigMarkup() *telebot.ReplyMarkup {
