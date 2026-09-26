@@ -145,6 +145,21 @@ func (r *Router) getErrorDescriptors() []errorDescriptor {
 			logMsg:    "Транзакция не найдена",
 			renderMsg: func(r *Router) string { return "⚠️ Транзакция не найдена." },
 		},
+		{
+			target: domain.ErrInvalidTransactionAmount,
+			logMsg: "Некорректная сумма транзакции",
+			renderMsg: func(r *Router) string {
+				return "⚠️ Пожалуйста, введите корректное положительное число (например: <code>3500</code> или <code>250.50</code>):"
+			},
+			parseMode: telebot.ModeHTML,
+		},
+		{
+			target: domain.ErrEmptyTransactionDescription,
+			logMsg: "Пустое описание транзакции",
+			renderMsg: func(r *Router) string {
+				return "⚠️ Описание не может быть пустым. Введите новое описание:"
+			},
+		},
 	}
 }
 
