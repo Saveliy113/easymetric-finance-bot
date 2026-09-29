@@ -149,3 +149,44 @@ func cancelTransactionEditingMarkup(transactionID int64) *telebot.ReplyMarkup {
 
 	return markup
 }
+
+type MenuUI struct {
+	ReplyMenu *telebot.ReplyMarkup
+
+	// Menu buttons
+	BtnTable      telebot.Btn
+	BtnSummary    telebot.Btn
+	BtnCategories telebot.Btn
+	BtnSettings   telebot.Btn
+	BtnHelp       telebot.Btn
+}
+
+func NewMenuUI() *MenuUI {
+	menu := &telebot.ReplyMarkup{
+		ResizeKeyboard: true,
+		IsPersistent:   true,
+	}
+
+	btnTable := menu.Text("📊 Таблица")
+	btnSummary := menu.Text("📈 Итоги месяца")
+	btnCategories := menu.Text("🏷 Категории")
+	btnSettings := menu.Text("⚙️ Настройки")
+	btnHelp := menu.Text("❓ Помощь")
+
+	// Раскладка кнопок сеткой
+	menu.Reply(
+		menu.Row(btnTable, btnSummary),
+		menu.Row(btnCategories, btnSettings),
+		menu.Row(btnHelp),
+	)
+
+	return &MenuUI{
+		ReplyMenu:     menu,
+		BtnTable:      btnTable,
+		BtnSummary:    btnSummary,
+		BtnCategories: btnCategories,
+		BtnSettings:   btnSettings,
+		BtnHelp:       btnHelp,
+	}
+}
+
