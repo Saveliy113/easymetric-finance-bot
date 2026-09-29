@@ -14,12 +14,12 @@ import (
 )
 
 type Router struct {
-	bot            *telebot.Bot
-	cfg            *config.Config
-	userRepo       *db.UserRepository
-	aiService      *ai.GeminiService
-	sheetsService  *sheets.SheetsService
-	categoriesMenu *telebot.ReplyMarkup
+	bot           *telebot.Bot
+	cfg           *config.Config
+	userRepo      *db.UserRepository
+	aiService     *ai.GeminiService
+	sheetsService *sheets.SheetsService
+	menuUI        *MenuUI
 }
 
 func NewRouter(bot *telebot.Bot, cfg *config.Config, userRepo *db.UserRepository, aiService *ai.GeminiService, sheetsService *sheets.SheetsService) *Router {
@@ -29,6 +29,7 @@ func NewRouter(bot *telebot.Bot, cfg *config.Config, userRepo *db.UserRepository
 		userRepo:      userRepo,
 		aiService:     aiService,
 		sheetsService: sheetsService,
+		menuUI:        NewMenuUI(),
 	}
 }
 
@@ -61,6 +62,10 @@ func (r *Router) Register() {
 	r.bot.Handle(&telebot.InlineButton{Unique: btnEditTransactionCategory}, r.sendUserCategoriesForEditing)
 	r.bot.Handle(&telebot.InlineButton{Unique: btnChangeTransactionCategory}, r.changeTransactionCategory)
 	r.bot.Handle(&telebot.InlineButton{Unique: btnBackToEditingTransaction}, r.sendTransactionEditingButtons)
+
+	// Main menu handlers
+	r.bot.Handle(&r.menuUI.BtnHelp, r.handleHelp)
+
 }
 
 func (r *Router) handleIncomingMessage(c telebot.Context) error {

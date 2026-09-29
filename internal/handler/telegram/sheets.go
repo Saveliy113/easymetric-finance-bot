@@ -98,5 +98,6 @@ func (r *Router) handleSheetURLInput(ctx context.Context, c telebot.Context, use
 		sheetUrl,
 	)
 
-	return c.Send(welcomeMessage, telebot.ModeMarkdown)
+
+	return c.Send(welcomeMessage, telebot.ModeMarkdown, r.menuUI.ReplyMenu)
 }
