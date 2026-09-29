@@ -31,15 +31,17 @@ func createTables() {
 	createUsersTable := `
 		CREATE TABLE IF NOT EXISTS users (
 			id 				 INTEGER PRIMARY KEY AUTOINCREMENT,
-			telegram_id 	 INTEGER NOT NULL UNIQUE,
-			spreadsheet_id   TEXT,
-			last_transaction_id INTEGER,
-			pending_transaction TEXT,
 			username         TEXT,
     		state            TEXT NOT NULL DEFAULT 'AWAITING_CITY',
 			timezone         TEXT,
 			currency		 TEXT,
 			categories_cache TEXT,
+			telegram_id 	 INTEGER NOT NULL UNIQUE,
+			spreadsheet_id   TEXT,
+			last_transaction_id INTEGER,
+			pending_transaction TEXT,
+			last_message_id INTEGER,
+			draft_edit_tx_id INTEGER,
 			created_at 		 DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);

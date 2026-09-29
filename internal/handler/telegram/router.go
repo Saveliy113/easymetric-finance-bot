@@ -53,6 +53,14 @@ func (r *Router) Register() {
 	// Transaction category clarification handler
 	r.bot.Handle(&telebot.InlineButton{Unique: btnIDSelectClarifiedCategory}, r.handleSelectClarifiedCategory)
 	r.bot.Handle(&telebot.InlineButton{Unique: btnIDCancelTransactionClarification}, r.handleCancelTransactionClarification)
+
+	// Transaction quick edit and delete handlers
+	r.bot.Handle(&telebot.InlineButton{Unique: btnQuickEditTransaction}, r.sendTransactionEditingButtons)
+	r.bot.Handle(&telebot.InlineButton{Unique: btnQuickDeleteTransaction}, r.handleDeleteTransaction)
+	r.bot.Handle(&telebot.InlineButton{Unique: btnCancelTransactionEditing}, r.handleCancelTransactionEditing)
+	r.bot.Handle(&telebot.InlineButton{Unique: btnEditTransactionCategory}, r.sendUserCategoriesForEditing)
+	r.bot.Handle(&telebot.InlineButton{Unique: btnChangeTransactionCategory}, r.changeTransactionCategory)
+	r.bot.Handle(&telebot.InlineButton{Unique: btnBackToEditingTransaction}, r.sendTransactionEditingButtons)
 }
 
 func (r *Router) handleIncomingMessage(c telebot.Context) error {

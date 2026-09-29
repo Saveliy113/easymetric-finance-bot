@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"em-finance-bot/internal/service/sheets"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -136,7 +137,7 @@ func (s *GeminiService) ParseTransaction(
 	)
 
 	config := &genai.GenerateContentConfig{
-		Temperature:     genai.Ptr[float32](0.0),
+		Temperature:      genai.Ptr[float32](0.0),
 		ResponseMIMEType: "application/json",
 		ResponseSchema: &genai.Schema{
 			Type: genai.TypeObject,
@@ -197,4 +198,17 @@ func (s *GeminiService) ParseTransaction(
 	)
 
 	return &transaction, nil
+}
+
+func (p *ParsedTransaction) ToTransaction(transactionId int64, userID int64) *sheets.Transaction {
+	return &sheets.Transaction{
+		ID:          transactionId,
+		UserID:      userID,
+		Type:        sheets.TransactionType(p.Type),
+		Amount:      p.Amount,
+		Category:    p.Category,
+		Description: p.Description,
+		Date:        p.Date,
+		CreatedAt:   time.Now(),
+	}
 }

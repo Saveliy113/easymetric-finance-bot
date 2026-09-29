@@ -28,4 +28,7 @@ var (
 	ErrInvalidTransaction              = errors.New("failed to parse transaction or amount")
 	ErrInvalidTransactionDate          = errors.New("failed to parse transaction date")
 	ErrTransactionClarificationExpired = errors.New("transaction clarification has expired")
+	ErrTransactionNotFound             = errors.New("transaction not found")
+	ErrInvalidTransactionAmount        = errors.New("invalid transaction amount")
+	ErrEmptyTransactionDescription     = errors.New("empty transaction description")
 )
