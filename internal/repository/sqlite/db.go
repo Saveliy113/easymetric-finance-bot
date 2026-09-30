@@ -3,6 +3,8 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -10,10 +12,16 @@ import (
 var DB *sql.DB
 
 func Init() {
+	dbPath := "data/em_finance.db"
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+		panic("Could not create database directory: " + err.Error())
+	}
+
+	dsn := fmt.Sprintf("%s?_journal_mode=WAL&_busy_timeout=5000", dbPath)
 	var err error
-	DB, err = sql.Open("sqlite3", "em_finance.db")
+	DB, err = sql.Open("sqlite3", dsn)
 	if err != nil {
-		panic("Could not connect to the database.")
+		panic("Could not connect to the database: " + err.Error())
 	}
 
 	if err = DB.Ping(); err != nil {
