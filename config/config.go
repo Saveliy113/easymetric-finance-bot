@@ -27,23 +27,17 @@ func LoadConfig() *Config {
 		envFile = ".env." + env
 	}
 
-	// Checking if the .env file exists
-	if _, err := os.Stat(envFile); err != nil {
-		if os.IsNotExist(err) {
-			log.Fatalf("Environment file %s does not exist", envFile)
-		}
-
-		log.Fatalf("Failed to check environment file %s: %v", envFile, err)
-	}
-
-	// Load environment variables from .env file if it exists
+	// Try loading environment variables from envFile, or fallback to .env if it exists.
+	// In production or container environments, variables can be passed directly via system environment.
 	if err := godotenv.Load(envFile); err != nil {
-		log.Fatalf("Error loading %s file: %v", envFile, err)
+		if errDefault := godotenv.Load(".env"); errDefault != nil {
+			log.Printf("Notice: No env file loaded (%s or .env), using system environment variables", envFile)
+		}
 	}
 
 	port := os.Getenv("PORT")
 	if port == "" {
-		log.Printf("Port is not set in %s file, setting default port :7070", envFile)
+		log.Printf("Port is not set, setting default port :7070")
 		port = "7070" // Default port if not set
 	}
 

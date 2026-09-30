@@ -1,0 +1,23 @@
+services:
+  finance-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: easymetric-finance-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Persistent storage for SQLite database on host
+      - ./data:/app/data
+      # Mount Google Service Account credentials (read-only)
+      - ./credentials.json:/app/credentials.json:ro
+    environment:
+      - TZ=UTC
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    ports:
+      - "${PORT:-7070}:7070"
