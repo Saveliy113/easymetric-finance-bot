@@ -79,6 +79,35 @@ func (r *Router) handleMainMenuSettings(c telebot.Context) error {
 	return c.Send(msg, markup, telebot.ModeHTML)
 }
 
+func (r *Router) handleChangeCity(c telebot.Context) error {
+	ctx := c.Get(ContextKey).(context.Context)
+
+	// Responding to telegram to stop loading
+	if c.Callback() != nil {
+		_ = c.Respond()
+	}
+
+	// Getting user from the db
+	user, err := r.userRepo.GetByTelegramId(ctx, c.Sender().ID)
+	if err != nil {
+		return err
+	}
+
+	// Updating user state to await city
+	user.State = domain.StateAwaitingCity
+	if err := r.userRepo.Upsert(ctx, user); err != nil {
+		return err
+	}
+
+	msg := "🌍 Отправьте название вашего города:"
+
+	if c.Callback() != nil {
+		return c.Edit(msg, cancelSettingsMarkup(), telebot.ModeHTML)
+	}
+
+	return c.Send(msg, cancelSettingsMarkup(), telebot.ModeHTML)
+}
+
 func (r *Router) handleLinkNewTable(c telebot.Context) error {
 	ctx := c.Get(ContextKey).(context.Context)
 
@@ -102,13 +131,13 @@ func (r *Router) handleLinkNewTable(c telebot.Context) error {
 	msg := "📊 Отправьте новую ссылку на таблицу:"
 
 	if c.Callback() != nil {
-		return c.Edit(msg, cancelChangeTableMarkup(), telebot.ModeHTML)
+		return c.Edit(msg, cancelSettingsMarkup(), telebot.ModeHTML)
 	}
 
-	return c.Send(msg, cancelChangeTableMarkup(), telebot.ModeHTML)
+	return c.Send(msg, cancelSettingsMarkup(), telebot.ModeHTML)
 }
 
-func (r *Router) handleCancelChangeTable(c telebot.Context) error {
+func (r *Router) handleCancelSettings(c telebot.Context) error {
 	_ = c.Respond()
 	ctx := c.Get(ContextKey).(context.Context)
 

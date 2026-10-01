@@ -48,17 +48,31 @@ func (r *Router) handleCityInput(ctx context.Context, c telebot.Context, user *d
 	// Updating user location data and state
 	user.Timezone = locationInfo.Timezone
 	user.Currency = locationInfo.Currency
-	user.State = domain.StateAwaitingCategories
+
+	// If updating location, returning state to reade
+	// Otherwise, continue onboarding flow
+	isSettingsFlow := user.SpreadsheetID != ""
+	if isSettingsFlow {
+		user.State = domain.StateReady
+	} else {
+		user.State = domain.StateAwaitingCategories
+	}
 
 	if err := r.userRepo.Upsert(ctx, user); err != nil {
 		return err
 	}
 
-	// 1. Первое сообщение: подтверждение распознанных данных
+	// Different headers for different flows
+	header := "✅ Город определен:"
+	if isSettingsFlow {
+		header = "✅ *Город и часовой пояс успешно обновлены!*\n\n📍 Город:"
+	}
+
 	locationSummary := fmt.Sprintf(
-		"✅ Город определен: *%s*\n"+
+		"%s *%s*\n"+
 			"🕒 Часовой пояс: `%s`\n"+
 			"💱 Валюта по умолчанию: `%s`",
+		header,
 		locationInfo.City,
 		locationInfo.Timezone,
 		locationInfo.Currency,
@@ -66,6 +80,12 @@ func (r *Router) handleCityInput(ctx context.Context, c telebot.Context, user *d
 
 	if err := c.Send(locationSummary, telebot.ModeMarkdown); err != nil {
 		return err
+	}
+
+	// Skip categorie step for updating location
+	// And continue onboarding flow otherwise
+	if isSettingsFlow {
+		return nil
 	}
 
 	return r.handleCategoriesStep(ctx, c)

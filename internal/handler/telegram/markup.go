@@ -27,7 +27,7 @@ const (
 	btnEditCategories             = "edit_categories"
 	btnChangeCity                 = "change_city"
 	btnLinkNewTable               = "link_new_table"
-	btnCancelChangeTable          = "cancel_change_table"
+	btnCancelSettings             = "cancel_settings"
 )
 
 type MenuUI struct {
@@ -218,10 +218,11 @@ func MenuHelpMarkup(sheetID string) *telebot.ReplyMarkup {
 	return markup
 }
 
-func cancelChangeTableMarkup() *telebot.ReplyMarkup {
+func cancelSettingsMarkup() *telebot.ReplyMarkup {
 	markup := &telebot.ReplyMarkup{}
-	btnCancel := markup.Data("🔙 Отмена", btnCancelChangeTable)
+	btnCancel := markup.Data("🔙 Отмена", btnCancelSettings)
 	markup.Inline(markup.Row(btnCancel))
 
 	return markup
 }
+

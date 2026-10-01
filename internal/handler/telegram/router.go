@@ -69,8 +69,9 @@ func (r *Router) Register() {
 	r.bot.Handle(&r.menuUI.BtnSettings, r.handleMainMenuSettings)
 
 	// Settings menu handlers
+	r.bot.Handle(&telebot.InlineButton{Unique: btnChangeCity}, r.handleChangeCity)
 	r.bot.Handle(&telebot.InlineButton{Unique: btnLinkNewTable}, r.handleLinkNewTable)
-	r.bot.Handle(&telebot.InlineButton{Unique: btnCancelChangeTable}, r.handleCancelChangeTable)
+	r.bot.Handle(&telebot.InlineButton{Unique: btnCancelSettings}, r.handleCancelSettings)
 }
 
 func (r *Router) handleIncomingMessage(c telebot.Context) error {
