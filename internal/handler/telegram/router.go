@@ -64,8 +64,20 @@ func (r *Router) Register() {
 	r.bot.Handle(&telebot.InlineButton{Unique: btnBackToEditingTransaction}, r.sendTransactionEditingButtons)
 
 	// Main menu handlers
-	r.bot.Handle(&r.menuUI.BtnHelp, r.handleHelp)
+	r.bot.Handle(&r.menuUI.BtnHelp, r.handleMainMenuHelp)
+	r.bot.Handle(&r.menuUI.BtnTable, r.handleMainMenuTable)
+	r.bot.Handle(&r.menuUI.BtnSettings, r.handleMainMenuSettings)
+	r.bot.Handle(&r.menuUI.BtnSummary, r.handleMainMenuSummary)
 
+	// Settings menu handlers
+	r.bot.Handle(&telebot.InlineButton{Unique: btnEditCategories}, r.handleSettingsCategoriesMenu)
+	r.bot.Handle(&telebot.InlineButton{Unique: btnCategoriesAdd}, r.handleCategoriesAddClick)
+	r.bot.Handle(&telebot.InlineButton{Unique: btnCategoriesDelete}, r.handleCategoriesDeleteMenu)
+	r.bot.Handle(&telebot.InlineButton{Unique: btnDeleteCategoryItem}, r.handleDeleteCategoryClick)
+	r.bot.Handle(&telebot.InlineButton{Unique: btnBackToCategories}, r.handleSettingsCategoriesMenu)
+	r.bot.Handle(&telebot.InlineButton{Unique: btnChangeCity}, r.handleChangeCity)
+	r.bot.Handle(&telebot.InlineButton{Unique: btnLinkNewTable}, r.handleLinkNewTable)
+	r.bot.Handle(&telebot.InlineButton{Unique: btnCancelSettings}, r.handleCancelSettings)
 }
 
 func (r *Router) handleIncomingMessage(c telebot.Context) error {
@@ -100,6 +112,10 @@ func (r *Router) handleIncomingMessage(c telebot.Context) error {
 		return r.handleUserCustomCategories(ctx, c, user)
 	case domain.StateAwaitingSheetURL:
 		return r.handleSheetURLInput(ctx, c, user)
+	case domain.StateAwaitingNewTable:
+		return r.handleChangeTableURLInput(ctx, c, user)
+	case domain.StateAwaitingAnalyticsDates:
+		return r.handleAnalyticsDatesInput(ctx, c, user)
 	case domain.StateReady:
 		return r.handleMoneyOperation(ctx, c, user)
 	}

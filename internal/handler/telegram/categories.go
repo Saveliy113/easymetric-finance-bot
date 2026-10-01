@@ -123,16 +123,13 @@ func (r *Router) handleUserCustomCategories(ctx context.Context, c telebot.Conte
 		slog.Any("categories", categoriesInfo.Categories),
 	)
 
+	if user.SpreadsheetID != "" {
+		return r.handleAddCategoriesInSettings(ctx, c, user, categoriesInfo.Categories)
+	}
+
 	categoriesBytes, err := json.Marshal(categoriesInfo.Categories)
 	if err != nil {
 		return fmt.Errorf("failed to marshal categories: %w", err)
-	}
-
-	// Setup user categories in sheets if spreadsheet is already connected
-	if user.SpreadsheetID != "" {
-		if err := r.sheetsService.SetupUserCategories(ctx, user.SpreadsheetID, "Дашборд", categoriesInfo.Categories); err != nil {
-			return err
-		}
 	}
 
 	slog.InfoContext(ctx, "Обновляем кеш категорий",
@@ -546,4 +543,240 @@ func (r *Router) changeTransactionCategory(c telebot.Context) error {
 	textResponse, menu := basicTransactionMarkup(transaction.Transaction, user)
 
 	return c.Edit(textResponse, menu, telebot.ModeHTML)
+}
+
+func (r *Router) handleSettingsCategoriesMenu(c telebot.Context) error {
+	ctx := c.Get(ContextKey).(context.Context)
+
+	// Responsing to user to stop loading
+	if c.Callback() != nil {
+		_ = c.Respond()
+	}
+
+	// Getting user from the db
+	user, err := r.userRepo.GetByTelegramId(ctx, c.Sender().ID)
+	if err != nil {
+		return err
+	}
+
+	// Reset user state if it's not ready
+	if user.State != domain.StateReady {
+		user.State = domain.StateReady
+		if err := r.userRepo.Upsert(ctx, user); err != nil {
+			return err
+		}
+	}
+
+	// Unmarshaling user categories
+	var categories []string
+	if user.CategoriesCache != "" {
+		_ = json.Unmarshal([]byte(user.CategoriesCache), &categories)
+	}
+
+	var b strings.Builder
+	b.WriteString("🏷 <b>Управление категориями расходов</b>\n\n")
+	if len(categories) == 0 {
+		b.WriteString("<i>Список категорий пуст.</i>\n\n")
+	} else {
+		b.WriteString("<b>Текущие категории:</b>\n")
+		for i, cat := range categories {
+			b.WriteString(fmt.Sprintf("%d. %s\n", i+1, cat))
+		}
+		b.WriteString(fmt.Sprintf("\n<i>Всего: %d</i>\n\n", len(categories)))
+	}
+	b.WriteString("Выберите действие:")
+
+	markup := categoriesManagementMarkup()
+
+	if c.Callback() != nil {
+		return c.Edit(b.String(), markup, telebot.ModeHTML)
+	}
+
+	return c.Send(b.String(), markup, telebot.ModeHTML)
+}
+
+func (r *Router) handleCategoriesAddClick(c telebot.Context) error {
+	ctx := c.Get(ContextKey).(context.Context)
+
+	// Responsing to user to stop loading
+	if c.Callback() != nil {
+		_ = c.Respond()
+	}
+
+	// Getting user from the db
+	user, err := r.userRepo.GetByTelegramId(ctx, c.Sender().ID)
+	if err != nil {
+		return err
+	}
+
+	// Setting user state to awaiting categories
+	user.State = domain.StateAwaitingCategories
+	if err := r.userRepo.Upsert(ctx, user); err != nil {
+		return err
+	}
+
+	// Creating message with categories
+	msg := "➕ <b>Добавление категорий</b>\n\n" +
+		"Отправьте название одной или нескольких категорий через запятую:\n" +
+		"<i>Например: Спорт, Хобби, Такси</i>"
+
+	// Sending message to user
+	if c.Callback() != nil {
+		return c.Edit(msg, cancelAddCategoryMarkup(), telebot.ModeHTML)
+	}
+
+	return c.Send(msg, cancelAddCategoryMarkup(), telebot.ModeHTML)
+}
+
+func (r *Router) handleCategoriesDeleteMenu(c telebot.Context) error {
+	ctx := c.Get(ContextKey).(context.Context)
+
+	// Responding to user to stop loading
+	if c.Callback() != nil {
+		_ = c.Respond()
+	}
+
+	user, err := r.userRepo.GetByTelegramId(ctx, c.Sender().ID)
+	if err != nil {
+		return err
+	}
+
+	var categories []string
+	if user.CategoriesCache != "" {
+		_ = json.Unmarshal([]byte(user.CategoriesCache), &categories)
+	}
+
+	if len(categories) <= 1 {
+		return domain.ErrCannotDeleteLastCategory
+	}
+
+	msg := "🗑 <b>Удаление категорий</b>\n\n" +
+		"Нажмите на категорию, чтобы удалить её из списка и таблицы:"
+
+	return c.Edit(msg, categoriesDeleteMarkup(categories), telebot.ModeHTML)
+}
+
+func (r *Router) handleDeleteCategoryClick(c telebot.Context) error {
+	ctx := c.Get(ContextKey).(context.Context)
+
+	// Responsing to user to stop loading
+	if c.Callback() != nil {
+		_ = c.Respond()
+	}
+
+	// Getting user from the db
+	user, err := r.userRepo.GetByTelegramId(ctx, c.Sender().ID)
+	if err != nil {
+		return err
+	}
+
+	// Unmarshaling user categories
+	var categories []string
+	if user.CategoriesCache != "" {
+		_ = json.Unmarshal([]byte(user.CategoriesCache), &categories)
+	}
+
+	// Checking if user has only one category
+	if len(categories) <= 1 {
+		return domain.ErrCannotDeleteLastCategory
+	}
+
+	// Getting category index from callback data
+	catIdx, err := strconv.Atoi(c.Data())
+	if err != nil || catIdx < 0 || catIdx >= len(categories) {
+		_ = c.Respond()
+		return nil
+	}
+
+	deletedCategory := categories[catIdx]
+	categories = append(categories[:catIdx], categories[catIdx+1:]...)
+
+	// Sync with Google Sheets
+	if err := r.sheetsService.SetupUserCategories(ctx, user.SpreadsheetID, "Дашборд", categories); err != nil {
+		return err
+	}
+
+	// Update user in DB
+	catBytes, err := json.Marshal(categories)
+	if err != nil {
+		return fmt.Errorf("failed to marshal categories: %w", err)
+	}
+
+	user.CategoriesCache = string(catBytes)
+	if err := r.userRepo.Upsert(ctx, user); err != nil {
+		return err
+	}
+
+	_ = c.Respond(&telebot.CallbackResponse{
+		Text: fmt.Sprintf("Категория «%s» удалена", deletedCategory),
+	})
+
+	msg := fmt.Sprintf(
+		"🗑 <b>Удаление категорий</b>\n\n"+
+			"✅ Категория <b>«%s»</b> удалена.\n\n"+
+			"Нажмите на категорию, чтобы удалить её:",
+		deletedCategory,
+	)
+
+	return c.Edit(msg, categoriesDeleteMarkup(categories), telebot.ModeHTML)
+}
+
+func (r *Router) handleAddCategoriesInSettings(ctx context.Context, c telebot.Context, user *domain.User, newCategories []string) error {
+	// Unmarshal existing categories
+	var currentCategories []string
+	if user.CategoriesCache != "" {
+		_ = json.Unmarshal([]byte(user.CategoriesCache), &currentCategories)
+	}
+
+	// Merge new categories without duplicates (case-insensitive)
+	existingMap := make(map[string]bool)
+	for _, cat := range currentCategories {
+		existingMap[strings.ToLower(strings.TrimSpace(cat))] = true
+	}
+
+	var addedCategories []string
+	for _, newCat := range newCategories {
+		clean := strings.TrimSpace(newCat)
+		lower := strings.ToLower(clean)
+		if !existingMap[lower] {
+			existingMap[lower] = true
+			currentCategories = append(currentCategories, clean)
+			addedCategories = append(addedCategories, clean)
+		}
+	}
+
+	if len(addedCategories) == 0 {
+		user.State = domain.StateReady
+		_ = r.userRepo.Upsert(ctx, user)
+		return c.Send("ℹ️ Все указанные категории уже есть в вашем списке.", r.menuUI.ReplyMenu)
+	}
+
+	// Sync with Google Sheets
+	if err := r.sheetsService.SetupUserCategories(ctx, user.SpreadsheetID, "Дашборд", currentCategories); err != nil {
+		return err
+	}
+
+	// Save updated categories to DB
+	categoriesBytes, err := json.Marshal(currentCategories)
+	if err != nil {
+		return fmt.Errorf("failed to marshal categories: %w", err)
+	}
+
+	user.CategoriesCache = string(categoriesBytes)
+	user.State = domain.StateReady
+
+	if err := r.userRepo.Upsert(ctx, user); err != nil {
+		return err
+	}
+
+	successMsg := fmt.Sprintf(
+		"✅ <b>Новые категории успешно добавлены!</b>\n\n"+
+			"➕ <b>Добавлено:</b> %s\n"+
+			"📊 <b>Всего категорий:</b> %d\n\n"+
+			"Они уже синхронизированы с вашей Google Таблицей.",
+		strings.Join(addedCategories, ", "),
+		len(currentCategories),
+	)
+
+	return c.Send(successMsg, telebot.ModeHTML, r.menuUI.ReplyMenu)
 }

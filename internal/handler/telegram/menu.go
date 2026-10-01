@@ -1,8 +1,19 @@
 package telegram
 
-import "gopkg.in/telebot.v3"
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"regexp"
+	"strings"
 
-func (r *Router) handleHelp(c telebot.Context) error {
+	"em-finance-bot/internal/domain"
+
+	"gopkg.in/telebot.v3"
+)
+
+func (r *Router) handleMainMenuHelp(c telebot.Context) error {
 	helpMessage := "📖 <b>Как устроен и работает бот EM Personal Finances</b>\n\n" +
 		"Бот помогает вести учет личных финансов: вы присылаете сообщения о расходах и доходах, искусственный интеллект разбирает их и сразу добавляет запись в вашу Google Таблицу.\n\n" +
 		"━━━━━━━━━━━━━━━━━━━━━\n" +
@@ -36,3 +47,196 @@ func (r *Router) handleHelp(c telebot.Context) error {
 
 	return c.Send(helpMessage, telebot.ModeHTML)
 }
+
+func (r *Router) handleMainMenuTable(c telebot.Context) error {
+	ctx := c.Get(ContextKey).(context.Context)
+
+	// Extracting userID
+	userID := c.Sender().ID
+
+	// Searching user in the db
+	user, err := r.userRepo.GetByTelegramId(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	// Generating table link markup
+	markup := MenuHelpMarkup(user.SpreadsheetID)
+
+	msg := "📊 <b>Ваша персональная финансовая таблица</b>\n\n" +
+		"Нажмите на кнопку ниже, чтобы перейти к таблице:"
+
+	return c.Send(msg, markup, telebot.ModeHTML)
+}
+
+func (r *Router) handleMainMenuSettings(c telebot.Context) error {
+	// Generating settings markup
+	markup := MenuSettingsMarkup()
+
+	msg := "⚙️ <b>Настройки</b>\n\n" +
+		"Выберите раздел, который хотите настроить"
+
+	return c.Send(msg, markup, telebot.ModeHTML)
+}
+
+func (r *Router) handleChangeCity(c telebot.Context) error {
+	ctx := c.Get(ContextKey).(context.Context)
+
+	// Responding to telegram to stop loading
+	if c.Callback() != nil {
+		_ = c.Respond()
+	}
+
+	// Getting user from the db
+	user, err := r.userRepo.GetByTelegramId(ctx, c.Sender().ID)
+	if err != nil {
+		return err
+	}
+
+	// Updating user state to await city
+	user.State = domain.StateAwaitingCity
+	if err := r.userRepo.Upsert(ctx, user); err != nil {
+		return err
+	}
+
+	msg := "🌍 Отправьте название вашего города"
+
+	if c.Callback() != nil {
+		return c.Edit(msg, cancelSettingsMarkup(), telebot.ModeHTML)
+	}
+
+	return c.Send(msg, cancelSettingsMarkup(), telebot.ModeHTML)
+}
+
+func (r *Router) handleLinkNewTable(c telebot.Context) error {
+	ctx := c.Get(ContextKey).(context.Context)
+
+	// Responding to telegram to stop loading
+	if c.Callback() != nil {
+		_ = c.Respond()
+	}
+
+	// Getting user from the db
+	user, err := r.userRepo.GetByTelegramId(ctx, c.Sender().ID)
+	if err != nil {
+		return err
+	}
+
+	// Updating user state to await new table link
+	user.State = domain.StateAwaitingNewTable
+	if err := r.userRepo.Upsert(ctx, user); err != nil {
+		return err
+	}
+
+	msg := "📊 Отправьте новую ссылку на таблицу"
+
+	if c.Callback() != nil {
+		return c.Edit(msg, cancelSettingsMarkup(), telebot.ModeHTML)
+	}
+
+	return c.Send(msg, cancelSettingsMarkup(), telebot.ModeHTML)
+}
+
+func (r *Router) handleCancelSettings(c telebot.Context) error {
+	_ = c.Respond()
+	ctx := c.Get(ContextKey).(context.Context)
+
+	// Getting user from the db
+	user, err := r.userRepo.GetByTelegramId(ctx, c.Sender().ID)
+	if err != nil {
+		return err
+	}
+
+	// Resetting state back to ready
+	user.State = domain.StateReady
+	if err := r.userRepo.Upsert(ctx, user); err != nil {
+		return err
+	}
+
+	// Returning back to settings menu
+	markup := MenuSettingsMarkup()
+	msg := "⚙️ <b>Настройки</b>\n\n" +
+		"Выберите раздел, который хотите настроить"
+
+	return c.Edit(msg, markup, telebot.ModeHTML)
+}
+
+func (r *Router) handleChangeTableURLInput(ctx context.Context, c telebot.Context, user *domain.User) error {
+	sheetUrl := strings.TrimSpace(c.Text())
+	slog.InfoContext(ctx, "Получена новая ссылка на Google Таблицу:",
+		slog.Int64("user_id", user.TelegramID),
+		slog.String("url", sheetUrl),
+	)
+
+	// Extracting unique sheet id from url
+	slog.InfoContext(ctx, "Извлекаем уникальный id таблицы из ссылки")
+	sheetIDRegex := regexp.MustCompile(`/d/([a-zA-Z0-9_-]+)`)
+	matches := sheetIDRegex.FindStringSubmatch(sheetUrl)
+	if len(matches) < 2 {
+		return domain.ErrInvalidSheetURL
+	}
+
+	sheetID := matches[1]
+
+	waitMsg, _ := r.bot.Send(c.Chat(), "⏳ Проверяю доступ к таблице...")
+
+	// Checking the bot is able to operate with the table
+	slog.InfoContext(ctx, "Проверяем доступ к Google Таблице",
+		slog.Int64("user_id", user.TelegramID),
+		slog.String("sheet_id", sheetID),
+	)
+
+	err := r.sheetsService.ValidateAccess(ctx, sheetID)
+	if waitMsg != nil {
+		_ = r.bot.Delete(waitMsg)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	slog.InfoContext(ctx, "Доступ к Google Таблице успешно подтвержден",
+		slog.Int64("user_id", user.TelegramID),
+		slog.String("sheet_id", sheetID),
+	)
+
+	// Setup user categories in the connected sheet if available
+	if user.CategoriesCache != "" {
+		var categories []string
+		if err := json.Unmarshal([]byte(user.CategoriesCache), &categories); err == nil && len(categories) > 0 {
+			if err := r.sheetsService.SetupUserCategories(ctx, sheetID, "Дашборд", categories); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Saving new sheet id to the db
+	slog.InfoContext(ctx, "Сохраняем id таблицы в БД",
+		slog.Int64("user_id", user.TelegramID),
+		slog.String("sheet_id", sheetID),
+	)
+
+	user.SpreadsheetID = sheetID
+	user.State = domain.StateReady
+
+	if err := r.userRepo.Upsert(ctx, user); err != nil {
+		return err
+	}
+
+	slog.InfoContext(ctx, "Id таблицы успешно сохранен в БД",
+		slog.Int64("user_id", user.TelegramID),
+		slog.String("sheet_id", sheetID),
+	)
+
+	successMessage := fmt.Sprintf(
+		"✅ <b>Новая Google Таблица успешно подключена!</b>\n\n"+
+			"🔗 <a href=\"%s\">Открыть Google Таблицу</a>\n\n"+
+			"Все новые операции будут автоматически записываться в эту таблицу.",
+		sheetUrl,
+	)
+
+	return c.Send(successMessage, telebot.ModeHTML, r.menuUI.ReplyMenu)
+}
+
+
+

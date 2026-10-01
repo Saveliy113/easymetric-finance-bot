@@ -24,7 +24,25 @@ const (
 	btnEditTransactionDescription = "edit_transaction_description"
 	btnCancelTransactionEditing   = "cancel_transaction_editing"
 	btnBackToEditingTransaction   = "back_to_editing_transaction"
+	btnEditCategories             = "edit_categories"
+	btnCategoriesAdd              = "categories_add"
+	btnCategoriesDelete           = "categories_delete"
+	btnDeleteCategoryItem         = "delete_category_item"
+	btnBackToCategories           = "back_to_categories"
+	btnChangeCity                 = "change_city"
+	btnLinkNewTable               = "link_new_table"
+	btnCancelSettings             = "cancel_settings"
 )
+
+type MenuUI struct {
+	ReplyMenu *telebot.ReplyMarkup
+
+	// Menu buttons
+	BtnTable    telebot.Btn
+	BtnSummary  telebot.Btn
+	BtnSettings telebot.Btn
+	BtnHelp     telebot.Btn
+}
 
 func (r *Router) startConfigMarkup() *telebot.ReplyMarkup {
 	markup := &telebot.ReplyMarkup{}
@@ -150,43 +168,115 @@ func cancelTransactionEditingMarkup(transactionID int64) *telebot.ReplyMarkup {
 	return markup
 }
 
-type MenuUI struct {
-	ReplyMenu *telebot.ReplyMarkup
-
-	// Menu buttons
-	BtnTable      telebot.Btn
-	BtnSummary    telebot.Btn
-	BtnCategories telebot.Btn
-	BtnSettings   telebot.Btn
-	BtnHelp       telebot.Btn
-}
-
 func NewMenuUI() *MenuUI {
-	menu := &telebot.ReplyMarkup{
+	markup := &telebot.ReplyMarkup{
 		ResizeKeyboard: true,
 		IsPersistent:   true,
 	}
 
-	btnTable := menu.Text("📊 Таблица")
-	btnSummary := menu.Text("📈 Итоги месяца")
-	btnCategories := menu.Text("🏷 Категории")
-	btnSettings := menu.Text("⚙️ Настройки")
-	btnHelp := menu.Text("❓ Помощь")
+	btnTable := markup.Text("📊 Таблица")
+	btnSummary := markup.Text("📈 Отчет")
+	btnSettings := markup.Text("⚙️ Настройки")
+	btnHelp := markup.Text("❓ Помощь")
 
-	// Раскладка кнопок сеткой
-	menu.Reply(
-		menu.Row(btnTable, btnSummary),
-		menu.Row(btnCategories, btnSettings),
-		menu.Row(btnHelp),
+	// Main menu grid
+	markup.Reply(
+		markup.Row(btnSummary, btnTable),
+		markup.Row(btnSettings, btnHelp),
 	)
 
 	return &MenuUI{
-		ReplyMenu:     menu,
-		BtnTable:      btnTable,
-		BtnSummary:    btnSummary,
-		BtnCategories: btnCategories,
-		BtnSettings:   btnSettings,
-		BtnHelp:       btnHelp,
+		ReplyMenu:   markup,
+		BtnTable:    btnTable,
+		BtnSummary:  btnSummary,
+		BtnSettings: btnSettings,
+		BtnHelp:     btnHelp,
 	}
 }
+
+func MenuSettingsMarkup() *telebot.ReplyMarkup {
+	markup := &telebot.ReplyMarkup{}
+
+	btnCategories := markup.Data("🏷 Категории", btnEditCategories)
+	btnLocation := markup.Data("🌍 Локация", btnChangeCity)
+	btnTable := markup.Data("🔗 Сменить таблицу", btnLinkNewTable)
+
+	// Settings menu grid
+	markup.Inline(
+		markup.Row(btnCategories, btnLocation, btnTable),
+	)
+
+	return markup
+}
+
+func MenuHelpMarkup(sheetID string) *telebot.ReplyMarkup {
+	markup := &telebot.ReplyMarkup{}
+
+	// Generating table link
+	sheetURL := fmt.Sprintf("https://docs.google.com/spreadsheets/d/%s/edit", sheetID)
+
+	// Inline button with integrated URL
+	btnOpenSheet := markup.URL("Открыть Google Sheets", sheetURL)
+	markup.Inline(markup.Row(btnOpenSheet))
+
+	return markup
+}
+
+func cancelSettingsMarkup() *telebot.ReplyMarkup {
+	markup := &telebot.ReplyMarkup{}
+	btnCancel := markup.Data("🔙 Отмена", btnCancelSettings)
+	markup.Inline(markup.Row(btnCancel))
+
+	return markup
+}
+
+func categoriesManagementMarkup() *telebot.ReplyMarkup {
+	markup := &telebot.ReplyMarkup{}
+	btnAdd := markup.Data("➕ Добавить", btnCategoriesAdd)
+	btnDelete := markup.Data("🗑 Удалить", btnCategoriesDelete)
+	btnBack := markup.Data("🔙 Назад", btnCancelSettings)
+
+	markup.Inline(
+		markup.Row(btnAdd, btnDelete),
+		markup.Row(btnBack),
+	)
+
+	return markup
+}
+
+func cancelAddCategoryMarkup() *telebot.ReplyMarkup {
+	markup := &telebot.ReplyMarkup{}
+	btnBack := markup.Data("🔙 Отмена", btnBackToCategories)
+	markup.Inline(markup.Row(btnBack))
+
+	return markup
+}
+
+func categoriesDeleteMarkup(categories []string) *telebot.ReplyMarkup {
+	markup := &telebot.ReplyMarkup{}
+	var rows []telebot.Row
+
+	var currentRow []telebot.Btn
+	for idx, cat := range categories {
+		btn := markup.Data("❌ "+cat, btnDeleteCategoryItem, strconv.Itoa(idx))
+		currentRow = append(currentRow, btn)
+
+		if len(currentRow) == 2 {
+			rows = append(rows, markup.Row(currentRow...))
+			currentRow = nil
+		}
+	}
+
+	if len(currentRow) > 0 {
+		rows = append(rows, markup.Row(currentRow...))
+	}
+
+	btnBack := markup.Data("🔙 Назад", btnBackToCategories)
+	rows = append(rows, markup.Row(btnBack))
+
+	markup.Inline(rows...)
+
+	return markup
+}
+
 
