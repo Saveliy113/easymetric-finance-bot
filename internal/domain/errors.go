@@ -11,8 +11,9 @@ var (
 	ErrParsingCity = errors.New("error while getting timezone and city from the Gemini API")
 
 	// Categories errors
-	ErrInvalidCategories = errors.New("invalid or empty categories")
-	ErrParsingCategories = errors.New("error while parsing categories from the Gemini API")
+	ErrInvalidCategories        = errors.New("invalid or empty categories")
+	ErrParsingCategories        = errors.New("error while parsing categories from the Gemini API")
+	ErrCannotDeleteLastCategory = errors.New("cannot delete last category")
 
 	// Google Sheets errors
 	ErrInvalidSheetURL    = errors.New("invalid google sheet url")

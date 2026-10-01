@@ -57,6 +57,13 @@ func (r *Router) getErrorDescriptors() []errorDescriptor {
 			},
 		},
 		{
+			target: domain.ErrCannotDeleteLastCategory,
+			logMsg: "Попытка удалить последнюю категорию",
+			renderMsg: func(r *Router) string {
+				return "⚠️ В списке должна остаться хотя бы одна категория!"
+			},
+		},
+		{
 			target: domain.ErrInvalidSheetURL,
 			logMsg: "Некорректная ссылка на Google Таблицу",
 			renderMsg: func(r *Router) string {

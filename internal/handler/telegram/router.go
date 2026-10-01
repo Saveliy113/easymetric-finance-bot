@@ -69,6 +69,11 @@ func (r *Router) Register() {
 	r.bot.Handle(&r.menuUI.BtnSettings, r.handleMainMenuSettings)
 
 	// Settings menu handlers
+	r.bot.Handle(&telebot.InlineButton{Unique: btnEditCategories}, r.handleSettingsCategoriesMenu)
+	r.bot.Handle(&telebot.InlineButton{Unique: btnCategoriesAdd}, r.handleCategoriesAddClick)
+	r.bot.Handle(&telebot.InlineButton{Unique: btnCategoriesDelete}, r.handleCategoriesDeleteMenu)
+	r.bot.Handle(&telebot.InlineButton{Unique: btnDeleteCategoryItem}, r.handleDeleteCategoryClick)
+	r.bot.Handle(&telebot.InlineButton{Unique: btnBackToCategories}, r.handleSettingsCategoriesMenu)
 	r.bot.Handle(&telebot.InlineButton{Unique: btnChangeCity}, r.handleChangeCity)
 	r.bot.Handle(&telebot.InlineButton{Unique: btnLinkNewTable}, r.handleLinkNewTable)
 	r.bot.Handle(&telebot.InlineButton{Unique: btnCancelSettings}, r.handleCancelSettings)

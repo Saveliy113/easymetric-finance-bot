@@ -25,6 +25,10 @@ const (
 	btnCancelTransactionEditing   = "cancel_transaction_editing"
 	btnBackToEditingTransaction   = "back_to_editing_transaction"
 	btnEditCategories             = "edit_categories"
+	btnCategoriesAdd              = "categories_add"
+	btnCategoriesDelete           = "categories_delete"
+	btnDeleteCategoryItem         = "delete_category_item"
+	btnBackToCategories           = "back_to_categories"
 	btnChangeCity                 = "change_city"
 	btnLinkNewTable               = "link_new_table"
 	btnCancelSettings             = "cancel_settings"
@@ -225,4 +229,54 @@ func cancelSettingsMarkup() *telebot.ReplyMarkup {
 
 	return markup
 }
+
+func categoriesManagementMarkup() *telebot.ReplyMarkup {
+	markup := &telebot.ReplyMarkup{}
+	btnAdd := markup.Data("➕ Добавить", btnCategoriesAdd)
+	btnDelete := markup.Data("🗑 Удалить", btnCategoriesDelete)
+	btnBack := markup.Data("🔙 Назад", btnCancelSettings)
+
+	markup.Inline(
+		markup.Row(btnAdd, btnDelete),
+		markup.Row(btnBack),
+	)
+
+	return markup
+}
+
+func cancelAddCategoryMarkup() *telebot.ReplyMarkup {
+	markup := &telebot.ReplyMarkup{}
+	btnBack := markup.Data("🔙 Отмена", btnBackToCategories)
+	markup.Inline(markup.Row(btnBack))
+
+	return markup
+}
+
+func categoriesDeleteMarkup(categories []string) *telebot.ReplyMarkup {
+	markup := &telebot.ReplyMarkup{}
+	var rows []telebot.Row
+
+	var currentRow []telebot.Btn
+	for idx, cat := range categories {
+		btn := markup.Data("❌ "+cat, btnDeleteCategoryItem, strconv.Itoa(idx))
+		currentRow = append(currentRow, btn)
+
+		if len(currentRow) == 2 {
+			rows = append(rows, markup.Row(currentRow...))
+			currentRow = nil
+		}
+	}
+
+	if len(currentRow) > 0 {
+		rows = append(rows, markup.Row(currentRow...))
+	}
+
+	btnBack := markup.Data("🔙 Назад", btnBackToCategories)
+	rows = append(rows, markup.Row(btnBack))
+
+	markup.Inline(rows...)
+
+	return markup
+}
+
 

@@ -200,11 +200,13 @@ func (s *SheetsService) SetupUserCategories(
 		})
 	}
 
-	// Clearing old rows with categories with reserve (A12:C60)
-	clearRange := fmt.Sprintf("'%s'!A12:C60", actualSheetName)
-	_, _ = s.srv.Spreadsheets.Values.Clear(spreadsheetID, clearRange, &sheets.ClearValuesRequest{}).
+	// Clearing old rows with categories with reserve (A12:C100)
+	clearRange := fmt.Sprintf("'%s'!A12:C100", actualSheetName)
+	if _, err := s.srv.Spreadsheets.Values.Clear(spreadsheetID, clearRange, &sheets.ClearValuesRequest{}).
 		Context(ctx).
-		Do()
+		Do(); err != nil {
+		slog.WarnContext(ctx, "Не удалось предварительно очистить диапазон категорий в таблице", slog.Any("error", err))
+	}
 
 	// Writing generated categories and formulas
 	targetRange := fmt.Sprintf("'%s'!A%d:C%d", actualSheetName, startRow, endRow)
