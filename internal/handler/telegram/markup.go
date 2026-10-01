@@ -26,6 +26,17 @@ const (
 	btnBackToEditingTransaction   = "back_to_editing_transaction"
 )
 
+type MenuUI struct {
+	ReplyMenu *telebot.ReplyMarkup
+
+	// Menu buttons
+	BtnTable      telebot.Btn
+	BtnSummary    telebot.Btn
+	BtnCategories telebot.Btn
+	BtnSettings   telebot.Btn
+	BtnHelp       telebot.Btn
+}
+
 func (r *Router) startConfigMarkup() *telebot.ReplyMarkup {
 	markup := &telebot.ReplyMarkup{}
 	btn := markup.Data("⚙️ Начать настройку", btnIDStartConfig)
@@ -150,43 +161,45 @@ func cancelTransactionEditingMarkup(transactionID int64) *telebot.ReplyMarkup {
 	return markup
 }
 
-type MenuUI struct {
-	ReplyMenu *telebot.ReplyMarkup
-
-	// Menu buttons
-	BtnTable      telebot.Btn
-	BtnSummary    telebot.Btn
-	BtnCategories telebot.Btn
-	BtnSettings   telebot.Btn
-	BtnHelp       telebot.Btn
-}
-
 func NewMenuUI() *MenuUI {
-	menu := &telebot.ReplyMarkup{
+	markup := &telebot.ReplyMarkup{
 		ResizeKeyboard: true,
 		IsPersistent:   true,
 	}
 
-	btnTable := menu.Text("📊 Таблица")
-	btnSummary := menu.Text("📈 Итоги месяца")
-	btnCategories := menu.Text("🏷 Категории")
-	btnSettings := menu.Text("⚙️ Настройки")
-	btnHelp := menu.Text("❓ Помощь")
+	btnTable := markup.Text("📊 Таблица")
+	btnSummary := markup.Text("📈 Итоги месяца")
+	btnCategories := markup.Text("🏷 Категории")
+	btnSettings := markup.Text("⚙️ Настройки")
+	btnHelp := markup.Text("❓ Помощь")
 
-	// Раскладка кнопок сеткой
-	menu.Reply(
-		menu.Row(btnTable, btnSummary),
-		menu.Row(btnCategories, btnSettings),
-		menu.Row(btnHelp),
+	// Main menu grid
+	markup.Reply(
+		markup.Row(btnTable, btnSummary),
+		markup.Row(btnCategories, btnSettings),
+		markup.Row(btnHelp),
 	)
 
 	return &MenuUI{
-		ReplyMenu:     menu,
+		ReplyMenu:     markup,
 		BtnTable:      btnTable,
 		BtnSummary:    btnSummary,
 		BtnCategories: btnCategories,
 		BtnSettings:   btnSettings,
 		BtnHelp:       btnHelp,
 	}
+}
+
+func MenuHelpMarkup(sheetID string) *telebot.ReplyMarkup {
+	markup := &telebot.ReplyMarkup{}
+
+	// Generating table link
+	sheetURL := fmt.Sprintf("https://docs.google.com/spreadsheets/d/%s/edit", sheetID)
+
+	// Inline button with integrated URL
+	btnOpenSheet := markup.URL("Открыть Google Sheets", sheetURL)
+	markup.Inline(markup.Row(btnOpenSheet))
+
+	return markup
 }
 

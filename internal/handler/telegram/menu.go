@@ -1,8 +1,12 @@
 package telegram
 
-import "gopkg.in/telebot.v3"
+import (
+	"context"
 
-func (r *Router) handleHelp(c telebot.Context) error {
+	"gopkg.in/telebot.v3"
+)
+
+func (r *Router) handleMainMenuHelp(c telebot.Context) error {
 	helpMessage := "📖 <b>Как устроен и работает бот EM Personal Finances</b>\n\n" +
 		"Бот помогает вести учет личных финансов: вы присылаете сообщения о расходах и доходах, искусственный интеллект разбирает их и сразу добавляет запись в вашу Google Таблицу.\n\n" +
 		"━━━━━━━━━━━━━━━━━━━━━\n" +
@@ -35,4 +39,25 @@ func (r *Router) handleHelp(c telebot.Context) error {
 		"• <b>❓ Помощь</b> — вызов этой инструкции со всеми правилами работы и командами."
 
 	return c.Send(helpMessage, telebot.ModeHTML)
+}
+
+func (r *Router) handleMainMenuTable(c telebot.Context) error {
+	ctx := c.Get(ContextKey).(context.Context)
+
+	// Extracting userID
+	userID := c.Sender().ID
+
+	// Searching user in the db
+	user, err := r.userRepo.GetByTelegramId(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	// Generating table link markup
+	markup := MenuHelpMarkup(user.SpreadsheetID)
+
+	msg := "📊 <b>Ваша персональная финансовая таблица</b>\n\n" +
+		"Нажмите на кнопку ниже, чтобы перейти к таблице:"
+
+	return c.Send(msg, markup, telebot.ModeHTML)
 }

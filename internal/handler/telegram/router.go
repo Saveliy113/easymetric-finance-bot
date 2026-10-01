@@ -64,7 +64,8 @@ func (r *Router) Register() {
 	r.bot.Handle(&telebot.InlineButton{Unique: btnBackToEditingTransaction}, r.sendTransactionEditingButtons)
 
 	// Main menu handlers
-	r.bot.Handle(&r.menuUI.BtnHelp, r.handleHelp)
+	r.bot.Handle(&r.menuUI.BtnHelp, r.handleMainMenuHelp)
+	r.bot.Handle(&r.menuUI.BtnTable, r.handleMainMenuTable)
 
 }
 
