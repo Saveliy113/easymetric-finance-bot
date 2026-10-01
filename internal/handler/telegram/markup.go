@@ -24,17 +24,19 @@ const (
 	btnEditTransactionDescription = "edit_transaction_description"
 	btnCancelTransactionEditing   = "cancel_transaction_editing"
 	btnBackToEditingTransaction   = "back_to_editing_transaction"
+	btnEditCategories             = "edit_categories"
+	btnChangeCity                 = "change_city"
+	btnLinkNewTable               = "link_new_table"
 )
 
 type MenuUI struct {
 	ReplyMenu *telebot.ReplyMarkup
 
 	// Menu buttons
-	BtnTable      telebot.Btn
-	BtnSummary    telebot.Btn
-	BtnCategories telebot.Btn
-	BtnSettings   telebot.Btn
-	BtnHelp       telebot.Btn
+	BtnTable    telebot.Btn
+	BtnSummary  telebot.Btn
+	BtnSettings telebot.Btn
+	BtnHelp     telebot.Btn
 }
 
 func (r *Router) startConfigMarkup() *telebot.ReplyMarkup {
@@ -169,25 +171,37 @@ func NewMenuUI() *MenuUI {
 
 	btnTable := markup.Text("📊 Таблица")
 	btnSummary := markup.Text("📈 Итоги месяца")
-	btnCategories := markup.Text("🏷 Категории")
 	btnSettings := markup.Text("⚙️ Настройки")
 	btnHelp := markup.Text("❓ Помощь")
 
 	// Main menu grid
 	markup.Reply(
 		markup.Row(btnTable, btnSummary),
-		markup.Row(btnCategories, btnSettings),
-		markup.Row(btnHelp),
+		markup.Row(btnSettings, btnHelp),
 	)
 
 	return &MenuUI{
-		ReplyMenu:     markup,
-		BtnTable:      btnTable,
-		BtnSummary:    btnSummary,
-		BtnCategories: btnCategories,
-		BtnSettings:   btnSettings,
-		BtnHelp:       btnHelp,
+		ReplyMenu:   markup,
+		BtnTable:    btnTable,
+		BtnSummary:  btnSummary,
+		BtnSettings: btnSettings,
+		BtnHelp:     btnHelp,
 	}
+}
+
+func MenuSettingsMarkup() *telebot.ReplyMarkup {
+	markup := &telebot.ReplyMarkup{}
+
+	btnCategories := markup.Data("🏷 Категории", btnEditCategories)
+	btnLocation := markup.Data("🌍 Локация", btnChangeCity)
+	btnTable := markup.Data("🔗 Сменить таблицу", btnLinkNewTable)
+
+	// Settings menu grid
+	markup.Inline(
+		markup.Row(btnCategories, btnLocation, btnTable),
+	)
+
+	return markup
 }
 
 func MenuHelpMarkup(sheetID string) *telebot.ReplyMarkup {
@@ -202,4 +216,3 @@ func MenuHelpMarkup(sheetID string) *telebot.ReplyMarkup {
 
 	return markup
 }
-

@@ -66,7 +66,7 @@ func (r *Router) Register() {
 	// Main menu handlers
 	r.bot.Handle(&r.menuUI.BtnHelp, r.handleMainMenuHelp)
 	r.bot.Handle(&r.menuUI.BtnTable, r.handleMainMenuTable)
-
+	r.bot.Handle(&r.menuUI.BtnSettings, r.handleMainMenuSettings)
 }
 
 func (r *Router) handleIncomingMessage(c telebot.Context) error {

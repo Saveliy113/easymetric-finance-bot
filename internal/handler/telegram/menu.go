@@ -61,3 +61,14 @@ func (r *Router) handleMainMenuTable(c telebot.Context) error {
 
 	return c.Send(msg, markup, telebot.ModeHTML)
 }
+
+func (r *Router) handleMainMenuSettings(c telebot.Context) error {
+	// Generating settings markup
+	markup := MenuSettingsMarkup()
+
+	msg := "⚙️ <b>Настройки</b>\n\n" +
+		"Выберите раздел, который хотите настроить:"
+
+	return c.Send(msg, markup, telebot.ModeHTML)
+}
+
