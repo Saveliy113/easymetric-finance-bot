@@ -74,7 +74,7 @@ func (s *SheetsService) FindTransactionByID(ctx context.Context, spreadsheetID s
 
 			// Transaction date
 			if len(row) > 1 {
-				tx.Date, _ = time.Parse("2006-01-02 15:04", fmt.Sprint(row[1]))
+				tx.Date, _ = time.Parse("2006-01-02 15:04", strings.TrimSpace(fmt.Sprint(row[1])))
 			}
 
 			// Category and type
@@ -104,6 +104,81 @@ func (s *SheetsService) FindTransactionByID(ctx context.Context, spreadsheetID s
 	}
 
 	return nil, domain.ErrTransactionNotFound
+}
+
+// FetchAllTransactions reads all transactions from journal ('Дашборд'!E3:J)
+func (s *SheetsService) FetchAllTransactions(ctx context.Context, spreadsheetID string) ([]*Transaction, error) {
+	readRange := "'Дашборд'!E3:J"
+	resp, err := s.srv.Spreadsheets.Values.Get(spreadsheetID, readRange).
+		Context(ctx).
+		Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch transactions: %w", err)
+	}
+
+	var transactions []*Transaction
+
+	for _, row := range resp.Values {
+		if len(row) == 0 {
+			continue
+		}
+
+		// Column E is ID (row[0])
+		idStr := strings.TrimSpace(fmt.Sprint(row[0]))
+		if idStr == "" || strings.EqualFold(idStr, "id") {
+			continue
+		}
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			// Skip headers or invalid rows
+			continue
+		}
+
+		tx := &Transaction{
+			ID: id,
+		}
+
+		// Column F: Date (row[1])
+		if len(row) > 1 {
+			tx.Date, _ = time.Parse("2006-01-02 15:04", strings.TrimSpace(fmt.Sprint(row[1])))
+		}
+
+		// Column G: Category (row[2])
+		if len(row) > 2 {
+			tx.Category = strings.TrimSpace(fmt.Sprint(row[2]))
+		}
+
+		// Column H: Type (row[3])
+		if len(row) > 3 {
+			typeStr := strings.TrimSpace(fmt.Sprint(row[3]))
+			if strings.EqualFold(typeStr, "income") || strings.EqualFold(typeStr, "Доход") {
+				tx.Type = TypeIncome
+			} else {
+				tx.Type = TypeExpense
+			}
+		}
+
+		// Column I: Amount (row[4])
+		if len(row) > 4 {
+			cleanAmount := strings.ReplaceAll(fmt.Sprint(row[4]), ",", "")
+			tx.Amount, _ = strconv.ParseFloat(cleanAmount, 64)
+		}
+
+		// Column J: Description (row[5])
+		if len(row) > 5 {
+			tx.Description = strings.TrimSpace(fmt.Sprint(row[5]))
+		}
+
+		transactions = append(transactions, tx)
+	}
+
+	slog.InfoContext(ctx, "Прочитаны транзакции из таблицы",
+		slog.String("spreadsheet_id", spreadsheetID),
+		slog.Int("total_rows", len(resp.Values)),
+		slog.Int("parsed_transactions", len(transactions)),
+	)
+
+	return transactions, nil
 }
 
 func NewSheetService(ctx context.Context, credentialsFilePath string) *SheetsService {
@@ -275,7 +350,7 @@ func (s *SheetsService) SaveTransaction(ctx context.Context, spreadsheetID strin
 	}
 
 	// Formating date for column F: YYYY-MM-DD HH:MM
-	dateStr := transaction.Date.Format("2006-01-02 15:04:05")
+	dateStr := transaction.Date.Format("2006-01-02 15:04")
 
 	// Determining display type and category
 	var displayType string

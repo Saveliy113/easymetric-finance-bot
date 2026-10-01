@@ -175,13 +175,13 @@ func NewMenuUI() *MenuUI {
 	}
 
 	btnTable := markup.Text("📊 Таблица")
-	btnSummary := markup.Text("📈 Итоги месяца")
+	btnSummary := markup.Text("📈 Отчет")
 	btnSettings := markup.Text("⚙️ Настройки")
 	btnHelp := markup.Text("❓ Помощь")
 
 	// Main menu grid
 	markup.Reply(
-		markup.Row(btnTable, btnSummary),
+		markup.Row(btnSummary, btnTable),
 		markup.Row(btnSettings, btnHelp),
 	)
 
