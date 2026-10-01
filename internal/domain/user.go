@@ -16,6 +16,7 @@ const (
 	StateAwaitingCategoryClarification UserState = "AWAITING_CATEGORY_CLARIFICATION"
 	StateAwaitingEditAmount            UserState = "AWAITING_EDIT_AMOUNT"
 	StateAwaitingEditDescription       UserState = "AWAITING_EDIT_DESCRIPTION"
+	StateAwaitingNewTable              UserState = "AWAITING_NEW_TABLE"
 )
 
 type User struct {

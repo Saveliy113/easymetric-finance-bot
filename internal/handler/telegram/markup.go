@@ -27,6 +27,7 @@ const (
 	btnEditCategories             = "edit_categories"
 	btnChangeCity                 = "change_city"
 	btnLinkNewTable               = "link_new_table"
+	btnCancelChangeTable          = "cancel_change_table"
 )
 
 type MenuUI struct {
@@ -213,6 +214,14 @@ func MenuHelpMarkup(sheetID string) *telebot.ReplyMarkup {
 	// Inline button with integrated URL
 	btnOpenSheet := markup.URL("Открыть Google Sheets", sheetURL)
 	markup.Inline(markup.Row(btnOpenSheet))
+
+	return markup
+}
+
+func cancelChangeTableMarkup() *telebot.ReplyMarkup {
+	markup := &telebot.ReplyMarkup{}
+	btnCancel := markup.Data("🔙 Отмена", btnCancelChangeTable)
+	markup.Inline(markup.Row(btnCancel))
 
 	return markup
 }

@@ -67,6 +67,10 @@ func (r *Router) Register() {
 	r.bot.Handle(&r.menuUI.BtnHelp, r.handleMainMenuHelp)
 	r.bot.Handle(&r.menuUI.BtnTable, r.handleMainMenuTable)
 	r.bot.Handle(&r.menuUI.BtnSettings, r.handleMainMenuSettings)
+
+	// Settings menu handlers
+	r.bot.Handle(&telebot.InlineButton{Unique: btnLinkNewTable}, r.handleLinkNewTable)
+	r.bot.Handle(&telebot.InlineButton{Unique: btnCancelChangeTable}, r.handleCancelChangeTable)
 }
 
 func (r *Router) handleIncomingMessage(c telebot.Context) error {
@@ -101,6 +105,8 @@ func (r *Router) handleIncomingMessage(c telebot.Context) error {
 		return r.handleUserCustomCategories(ctx, c, user)
 	case domain.StateAwaitingSheetURL:
 		return r.handleSheetURLInput(ctx, c, user)
+	case domain.StateAwaitingNewTable:
+		return r.handleChangeTableURLInput(ctx, c, user)
 	case domain.StateReady:
 		return r.handleMoneyOperation(ctx, c, user)
 	}
