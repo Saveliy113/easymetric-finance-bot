@@ -74,7 +74,7 @@ func (r *Router) handleMainMenuSettings(c telebot.Context) error {
 	markup := MenuSettingsMarkup()
 
 	msg := "⚙️ <b>Настройки</b>\n\n" +
-		"Выберите раздел, который хотите настроить:"
+		"Выберите раздел, который хотите настроить"
 
 	return c.Send(msg, markup, telebot.ModeHTML)
 }
@@ -99,7 +99,7 @@ func (r *Router) handleChangeCity(c telebot.Context) error {
 		return err
 	}
 
-	msg := "🌍 Отправьте название вашего города:"
+	msg := "🌍 Отправьте название вашего города"
 
 	if c.Callback() != nil {
 		return c.Edit(msg, cancelSettingsMarkup(), telebot.ModeHTML)
@@ -128,7 +128,7 @@ func (r *Router) handleLinkNewTable(c telebot.Context) error {
 		return err
 	}
 
-	msg := "📊 Отправьте новую ссылку на таблицу:"
+	msg := "📊 Отправьте новую ссылку на таблицу"
 
 	if c.Callback() != nil {
 		return c.Edit(msg, cancelSettingsMarkup(), telebot.ModeHTML)
@@ -156,7 +156,7 @@ func (r *Router) handleCancelSettings(c telebot.Context) error {
 	// Returning back to settings menu
 	markup := MenuSettingsMarkup()
 	msg := "⚙️ <b>Настройки</b>\n\n" +
-		"Выберите раздел, который хотите настроить:"
+		"Выберите раздел, который хотите настроить"
 
 	return c.Edit(msg, markup, telebot.ModeHTML)
 }
