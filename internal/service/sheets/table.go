@@ -36,6 +36,14 @@ func wrapSheetsError(err error) error {
 	return err
 }
 
+// withSheetsTimeout ensures the context has a deadline for Google Sheets API calls
+func withSheetsTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, 25*time.Second)
+}
+
 // TODO: Move to domain maybe
 type TransactionType string
 
@@ -64,6 +72,9 @@ type FoundTransaction struct {
 
 // FindTransactionByID searches transaction by it's id in table E column
 func (s *SheetsService) FindTransactionByID(ctx context.Context, spreadsheetID string, targetID int) (*FoundTransaction, error) {
+	ctx, cancel := withSheetsTimeout(ctx)
+	defer cancel()
+
 	// Reading journal operations (starting from row 3, where data begins)
 	readRange := "'Дашборд'!E3:J"
 	resp, err := s.srv.Spreadsheets.Values.Get(spreadsheetID, readRange).
@@ -124,6 +135,9 @@ func (s *SheetsService) FindTransactionByID(ctx context.Context, spreadsheetID s
 
 // FetchAllTransactions reads all transactions from journal ('Дашборд'!E3:J)
 func (s *SheetsService) FetchAllTransactions(ctx context.Context, spreadsheetID string) ([]*Transaction, error) {
+	ctx, cancel := withSheetsTimeout(ctx)
+	defer cancel()
+
 	readRange := "'Дашборд'!E3:J"
 	resp, err := s.srv.Spreadsheets.Values.Get(spreadsheetID, readRange).
 		Context(ctx).
@@ -224,6 +238,9 @@ func NewSheetService(ctx context.Context, credentialsFilePath string) *SheetsSer
 }
 
 func (s *SheetsService) ValidateAccess(ctx context.Context, spreadsheetID string) error {
+	ctx, cancel := withSheetsTimeout(ctx)
+	defer cancel()
+
 	slog.InfoContext(ctx, "Проверяем доступ к таблице", slog.String("spreadsheetID", spreadsheetID))
 
 	// Trying to get table metadata
@@ -231,18 +248,7 @@ func (s *SheetsService) ValidateAccess(ctx context.Context, spreadsheetID string
 	_, err := call.Context(ctx).Do()
 
 	if err != nil {
-		var gErr *googleapi.Error
-		if errors.As(err, &gErr) {
-			switch gErr.Code {
-			case http.StatusNotFound:
-				return domain.ErrSheetNotFound
-			case http.StatusForbidden:
-				return domain.ErrSheetAccessDenied
-			default:
-				return domain.ErrGoogleAPIFailed
-			}
-		}
-		return fmt.Errorf("failed to validate table access: %w", err)
+		return wrapSheetsError(err)
 	}
 
 	return nil
@@ -258,12 +264,15 @@ func (s *SheetsService) SetupUserCategories(
 		return domain.ErrInvalidCategories
 	}
 
+	ctx, cancel := withSheetsTimeout(ctx)
+	defer cancel()
+
 	// Getting table metadata for defining sheet ID and name
 	slog.InfoContext(ctx, "Получаем метаданные таблицы по ID и имени листа", slog.String("spreadsheetID", spreadsheetID), slog.String("sheetName", sheetName))
 	ss, err := s.srv.Spreadsheets.Get(spreadsheetID).Context(ctx).Do()
 	if err != nil {
 		slog.InfoContext(ctx, "Не удалось получить таблицу", slog.Any("error", err))
-		return fmt.Errorf("error getting access to table: %w", err)
+		return wrapSheetsError(fmt.Errorf("error getting access to table: %w", err))
 	}
 
 	var targetSheetID int64
@@ -327,7 +336,7 @@ func (s *SheetsService) SetupUserCategories(
 		Context(ctx).
 		Do()
 	if err != nil {
-		return fmt.Errorf("error while inserting rows: %w", err)
+		return wrapSheetsError(fmt.Errorf("error while inserting rows: %w", err))
 	}
 
 	// Updating data validation list in column G (Category)
@@ -366,7 +375,7 @@ func (s *SheetsService) SetupUserCategories(
 
 	_, err = s.srv.Spreadsheets.BatchUpdate(spreadsheetID, batchReq).Context(ctx).Do()
 	if err != nil {
-		return fmt.Errorf("error while updating data validation list: %w", err)
+		return wrapSheetsError(fmt.Errorf("error while updating data validation list: %w", err))
 	}
 
 	slog.InfoContext(ctx, "Категории, формулы сумм и выпадающие списки успешно настроены",
@@ -381,6 +390,9 @@ func (s *SheetsService) SaveTransaction(ctx context.Context, spreadsheetID strin
 	if transaction == nil {
 		return fmt.Errorf("transaction cannot be empty")
 	}
+
+	ctx, cancel := withSheetsTimeout(ctx)
+	defer cancel()
 
 	// Formating date for column F: YYYY-MM-DD HH:MM
 	dateStr := transaction.Date.Format("2006-01-02 15:04")
@@ -419,7 +431,6 @@ func (s *SheetsService) SaveTransaction(ctx context.Context, spreadsheetID strin
 		slog.String("spreadsheet_id", spreadsheetID),
 		slog.String("range", targetRange),
 		slog.String("category", finalCategory),
-		slog.Float64("amount", transaction.Amount),
 	)
 
 	// Append finds the first free row in E3:J and writes data without shifting/inserting rows across the sheet
@@ -429,13 +440,12 @@ func (s *SheetsService) SaveTransaction(ctx context.Context, spreadsheetID strin
 		Context(ctx).
 		Do()
 	if err != nil {
-		return fmt.Errorf("error appending row to table: %w", err)
+		return wrapSheetsError(fmt.Errorf("error appending row to table: %w", err))
 	}
 
 	slog.InfoContext(ctx, "Транзакция успешно записана в журнал",
 		slog.Int64("id", transaction.ID),
 		slog.String("type", displayType),
-		slog.Float64("amount", transaction.Amount),
 		slog.String("category", finalCategory),
 	)
 
@@ -443,6 +453,9 @@ func (s *SheetsService) SaveTransaction(ctx context.Context, spreadsheetID strin
 }
 
 func (s *SheetsService) UpdateTransactionCategory(ctx context.Context, spreadsheetID string, transactionID int64, selectedCategory string) error {
+	ctx, cancel := withSheetsTimeout(ctx)
+	defer cancel()
+
 	// Searching target row number by transaction id
 	transaction, err := s.FindTransactionByID(ctx, spreadsheetID, int(transactionID))
 	if err != nil {
@@ -468,7 +481,7 @@ func (s *SheetsService) UpdateTransactionCategory(ctx context.Context, spreadshe
 		Context(ctx).
 		Do()
 	if err != nil {
-		return err
+		return wrapSheetsError(err)
 	}
 
 	slog.InfoContext(ctx, "Категория операции успешно обновлена в таблице",
@@ -480,6 +493,9 @@ func (s *SheetsService) UpdateTransactionCategory(ctx context.Context, spreadshe
 }
 
 func (s *SheetsService) UpdateTransactionAmount(ctx context.Context, spreadsheetID string, transactionID int64, newAmount float64) error {
+	ctx, cancel := withSheetsTimeout(ctx)
+	defer cancel()
+
 	// Searching target row number by transaction id
 	transaction, err := s.FindTransactionByID(ctx, spreadsheetID, int(transactionID))
 	if err != nil {
@@ -495,7 +511,6 @@ func (s *SheetsService) UpdateTransactionAmount(ctx context.Context, spreadsheet
 
 	slog.InfoContext(ctx, "Обновление суммы транзакции в Google Таблице",
 		slog.Int64("transaction_id", transactionID),
-		slog.Float64("new_amount", newAmount),
 	)
 
 	// Updating amount cell
@@ -504,18 +519,20 @@ func (s *SheetsService) UpdateTransactionAmount(ctx context.Context, spreadsheet
 		Context(ctx).
 		Do()
 	if err != nil {
-		return err
+		return wrapSheetsError(err)
 	}
 
 	slog.InfoContext(ctx, "Сумма операции успешно обновлена в таблице",
 		slog.Int64("transaction_id", transactionID),
-		slog.Float64("new_amount", newAmount),
 	)
 
 	return nil
 }
 
 func (s *SheetsService) UpdateTransactionDescription(ctx context.Context, spreadsheetID string, transactionID int64, newDescription string) error {
+	ctx, cancel := withSheetsTimeout(ctx)
+	defer cancel()
+
 	// Searching target row number by transaction id
 	transaction, err := s.FindTransactionByID(ctx, spreadsheetID, int(transactionID))
 	if err != nil {
@@ -531,7 +548,6 @@ func (s *SheetsService) UpdateTransactionDescription(ctx context.Context, spread
 
 	slog.InfoContext(ctx, "Обновление описания транзакции в Google Таблице",
 		slog.Int64("transaction_id", transactionID),
-		slog.String("new_description", newDescription),
 	)
 
 	// Updating description cell
@@ -540,12 +556,11 @@ func (s *SheetsService) UpdateTransactionDescription(ctx context.Context, spread
 		Context(ctx).
 		Do()
 	if err != nil {
-		return err
+		return wrapSheetsError(err)
 	}
 
 	slog.InfoContext(ctx, "Описание операции успешно обновлено в таблице",
 		slog.Int64("transaction_id", transactionID),
-		slog.String("new_description", newDescription),
 	)
 
 	return nil
@@ -554,7 +569,7 @@ func (s *SheetsService) UpdateTransactionDescription(ctx context.Context, spread
 func (s *SheetsService) getSheetID(ctx context.Context, spreadsheetID string, sheetName string) (int64, error) {
 	ss, err := s.srv.Spreadsheets.Get(spreadsheetID).Fields("sheets.properties").Context(ctx).Do()
 	if err != nil {
-		return 0, fmt.Errorf("error getting spreadsheet metadata: %w", err)
+		return 0, wrapSheetsError(fmt.Errorf("error getting spreadsheet metadata: %w", err))
 	}
 
 	for _, sheet := range ss.Sheets {
@@ -571,6 +586,9 @@ func (s *SheetsService) getSheetID(ctx context.Context, spreadsheetID string, sh
 }
 
 func (s *SheetsService) DeleteTransaction(ctx context.Context, spreadsheetID string, transactionID int) (*Transaction, error) {
+	ctx, cancel := withSheetsTimeout(ctx)
+	defer cancel()
+
 	// Searching target row number by transaction id
 	found, err := s.FindTransactionByID(ctx, spreadsheetID, transactionID)
 	if err != nil {
@@ -614,7 +632,7 @@ func (s *SheetsService) DeleteTransaction(ctx context.Context, spreadsheetID str
 
 	_, err = s.srv.Spreadsheets.BatchUpdate(spreadsheetID, batchReq).Context(ctx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("error while deleting transaction range: %w", err)
+		return nil, wrapSheetsError(fmt.Errorf("error while deleting transaction range: %w", err))
 	}
 
 	slog.InfoContext(ctx, "Транзакция успешно удалена из таблицы",

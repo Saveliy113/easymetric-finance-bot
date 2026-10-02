@@ -6,6 +6,7 @@ import (
 	"log"
 	"log/slog"
 	"os"
+	"strings"
 
 	"em-finance-bot/config"
 	httpHandler "em-finance-bot/internal/handler/http"
@@ -23,10 +24,26 @@ import (
 func Run(cfg *config.Config) {
 	ctx := context.Background()
 
-	// Configuring global logger
+	// Configuring global logger with configurable log level
+	logLevel := slog.LevelInfo
+	if envLevel := os.Getenv("LOG_LEVEL"); envLevel != "" {
+		switch strings.ToUpper(envLevel) {
+		case "DEBUG":
+			logLevel = slog.LevelDebug
+		case "WARN", "WARNING":
+			logLevel = slog.LevelWarn
+		case "ERROR":
+			logLevel = slog.LevelError
+		default:
+			logLevel = slog.LevelInfo
+		}
+	} else if os.Getenv("APP_ENV") == "dev" || os.Getenv("APP_ENV") == "development" {
+		logLevel = slog.LevelDebug
+	}
+
 	baseLogHandler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level:     slog.LevelDebug,
-		AddSource: true,
+		Level:     logLevel,
+		AddSource: logLevel <= slog.LevelDebug,
 	})
 	traceHandler := logger.NewTraceHandler(baseLogHandler)
 	slog.SetDefault(slog.New(traceHandler))

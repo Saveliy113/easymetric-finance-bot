@@ -38,6 +38,7 @@ func NewRouter(bot *telebot.Bot, cfg *config.Config, userRepo *db.UserRepository
 func (r *Router) Register() {
 	// Register global telemetry & error middleware
 	r.bot.Use(r.TelemetryMiddleware())
+	r.bot.Use(r.RateLimitMiddleware())
 
 	// Start comand handler (/start)
 	r.bot.Handle("/start", r.handleGreeting)

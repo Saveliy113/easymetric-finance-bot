@@ -156,7 +156,7 @@ func (r *Router) getErrorDescriptors() []errorDescriptor {
 			target: domain.ErrInvalidTransactionAmount,
 			logMsg: "Некорректная сумма транзакции",
 			renderMsg: func(r *Router) string {
-				return "⚠️ Пожалуйста, введите корректное положительное число (например: <code>3500</code> или <code>250.50</code>):"
+				return "⚠️ Пожалуйста, введите корректное положительное число (например: <code>3500</code> или <code>250.50</code>).\n\n<i>Или нажмите «🔙 Отмена» под сообщением выше, чтобы вернуться.</i>"
 			},
 			parseMode: telebot.ModeHTML,
 		},
@@ -164,8 +164,9 @@ func (r *Router) getErrorDescriptors() []errorDescriptor {
 			target: domain.ErrEmptyTransactionDescription,
 			logMsg: "Пустое описание транзакции",
 			renderMsg: func(r *Router) string {
-				return "⚠️ Описание не может быть пустым. Введите новое описание:"
+				return "⚠️ Описание не может быть пустым. Введите новое описание:\n\n<i>Или нажмите «🔙 Отмена» под сообщением выше, чтобы вернуться.</i>"
 			},
+			parseMode: telebot.ModeHTML,
 		},
 		{
 			target: domain.ErrParsingAnalyticsPeriod,

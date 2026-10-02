@@ -103,6 +103,7 @@ func (r *Router) handleUserCustomCategories(ctx context.Context, c telebot.Conte
 	}
 
 	waitMsg, _ := r.bot.Send(c.Chat(), "⏳ Анализирую категории трат...")
+	_ = c.Notify(telebot.Typing)
 
 	slog.InfoContext(ctx, "Отправляем запрос в gemini для анализа категорий",
 		slog.Int64("user_id", user.TelegramID),

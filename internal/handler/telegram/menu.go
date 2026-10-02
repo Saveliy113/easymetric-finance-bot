@@ -70,6 +70,14 @@ func (r *Router) handleMainMenuTable(c telebot.Context) error {
 }
 
 func (r *Router) handleMainMenuSettings(c telebot.Context) error {
+	ctx := c.Get(ContextKey).(context.Context)
+
+	// Check if user is registered
+	_, err := r.userRepo.GetByTelegramId(ctx, c.Sender().ID)
+	if err != nil {
+		return err
+	}
+
 	// Generating settings markup
 	markup := MenuSettingsMarkup()
 

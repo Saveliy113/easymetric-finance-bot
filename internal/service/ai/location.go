@@ -66,11 +66,12 @@ func (s *GeminiService) ParseCity(ctx context.Context, cityName string) (*Locati
 		ResponseMIMEType: "application/json",
 	}
 
-	result, err := s.client.Models.GenerateContent(
+	result, err := s.generateContentWithRetry(
 		ctx,
 		"gemini-3.5-flash-lite",
 		genai.Text(prompt),
 		config,
+		2,
 	)
 	if err != nil {
 		return nil, wrapGeminiError(err, "gemini city resolution failed")

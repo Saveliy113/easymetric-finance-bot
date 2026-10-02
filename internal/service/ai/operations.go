@@ -75,6 +75,56 @@ const parseTransactionPrompt = `
 "%s"
 `
 
+func (s *GeminiService) generateContentWithRetry(
+	ctx context.Context,
+	model string,
+	contents []*genai.Content,
+	config *genai.GenerateContentConfig,
+	maxRetries int,
+) (*genai.GenerateContentResponse, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 35*time.Second)
+		defer cancel()
+	}
+
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+
+		result, err := s.client.Models.GenerateContent(ctx, model, contents, config)
+		if err == nil {
+			return result, nil
+		}
+
+		lastErr = err
+
+		// Only retry on transient/infrastructure errors
+		if !isRetryableGeminiError(err) {
+			return nil, err
+		}
+
+		if attempt < maxRetries {
+			backoff := time.Duration(attempt+1) * 500 * time.Millisecond
+			slog.WarnContext(ctx, "Временный сбой при вызове Gemini API, повторная попытка...",
+				slog.Int("attempt", attempt+1),
+				slog.Duration("backoff", backoff),
+				slog.Any("error", err),
+			)
+
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+			}
+		}
+	}
+
+	return nil, lastErr
+}
+
 func (s *GeminiService) TranscribeVoice(ctx context.Context, data []byte) (string, error) {
 	if len(data) == 0 {
 		return "", fmt.Errorf("voice message data is empty")
@@ -82,7 +132,7 @@ func (s *GeminiService) TranscribeVoice(ctx context.Context, data []byte) (strin
 
 	slog.InfoContext(ctx, "Отправляем аудио в Gemini для транскрипции", slog.Int("bytes_len", len(data)))
 
-	result, err := s.client.Models.GenerateContent(
+	result, err := s.generateContentWithRetry(
 		ctx,
 		"gemini-3.5-flash-lite",
 		[]*genai.Content{
@@ -102,6 +152,7 @@ func (s *GeminiService) TranscribeVoice(ctx context.Context, data []byte) (strin
 			},
 		},
 		nil,
+		2,
 	)
 
 	if err != nil {
@@ -113,7 +164,7 @@ func (s *GeminiService) TranscribeVoice(ctx context.Context, data []byte) (strin
 		return "", fmt.Errorf("empty transcription from gemini")
 	}
 
-	slog.InfoContext(ctx, "Голосовое сообщение успешно расшифровано Gemini", slog.String("transcription", transcription))
+	slog.InfoContext(ctx, "Голосовое сообщение успешно расшифровано Gemini", slog.Int("transcription_len", len(transcription)))
 
 	return transcription, nil
 }
@@ -184,12 +235,12 @@ func (s *GeminiService) ParseTransaction(
 	}
 
 	slog.InfoContext(ctx, "Отправляем запрос в Gemini для парсинга транзакции",
-		slog.String("rawText", rawText),
+		slog.Int("rawText_len", len(rawText)),
 		slog.String("currency", userCurrency),
 		slog.String("timezone", userTZ),
 	)
 
-	result, err := s.client.Models.GenerateContent(ctx, "gemini-3.5-flash-lite", genai.Text(prompt), config)
+	result, err := s.generateContentWithRetry(ctx, "gemini-3.5-flash-lite", genai.Text(prompt), config, 2)
 	if err != nil {
 		return nil, wrapGeminiError(err, "error analyzing transaction")
 	}
@@ -202,7 +253,6 @@ func (s *GeminiService) ParseTransaction(
 	slog.InfoContext(ctx, "Транзакция успешно проанализирована Gemini",
 		slog.Bool("is_valid", transaction.IsValid),
 		slog.String("type", transaction.Type),
-		slog.Float64("amount", transaction.Amount),
 		slog.String("category", transaction.Category),
 	)
 

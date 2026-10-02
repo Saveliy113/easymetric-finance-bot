@@ -51,11 +51,12 @@ func (s *GeminiService) ParseCategories(ctx context.Context, categories string) 
 		ResponseMIMEType: "application/json",
 	}
 
-	result, err := s.client.Models.GenerateContent(
+	result, err := s.generateContentWithRetry(
 		ctx,
 		"gemini-3.5-flash-lite",
 		genai.Text(prompt),
 		config,
+		2,
 	)
 	if err != nil {
 		return nil, wrapGeminiError(err, "gemini categories parsing failed")

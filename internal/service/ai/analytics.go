@@ -140,11 +140,12 @@ func (s *GeminiService) ExtractDateFilter(
 		},
 	}
 
-	result, err := s.client.Models.GenerateContent(
+	result, err := s.generateContentWithRetry(
 		ctx,
 		"gemini-3.5-flash-lite",
 		genai.Text(prompt),
 		config,
+		2,
 	)
 	if err != nil {
 		return nil, wrapGeminiError(err, "gemini extract date filter failed")
@@ -189,8 +190,6 @@ func (s *GeminiService) GenerateFinancialReport(
 
 	slog.InfoContext(ctx, "Отправляем запрос в Gemini для генерации финансового отчета",
 		slog.String("period_label", periodLabel),
-		slog.Float64("total_income", summary.TotalIncome),
-		slog.Float64("total_expense", summary.TotalExpense),
 		slog.Int("tx_count", summary.TransactionsCount),
 	)
 
@@ -198,11 +197,12 @@ func (s *GeminiService) GenerateFinancialReport(
 		Temperature: genai.Ptr[float32](0.3),
 	}
 
-	result, err := s.client.Models.GenerateContent(
+	result, err := s.generateContentWithRetry(
 		ctx,
 		"gemini-3.5-flash-lite",
 		genai.Text(prompt),
 		config,
+		2,
 	)
 	if err != nil {
 		return "", wrapGeminiError(err, "gemini financial report generation failed")

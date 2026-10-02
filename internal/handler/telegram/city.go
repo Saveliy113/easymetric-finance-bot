@@ -23,6 +23,7 @@ func (r *Router) handleCityInput(ctx context.Context, c telebot.Context, user *d
 	}
 
 	waitMsg, _ := r.bot.Send(c.Chat(), "⏳ Определяю часовой пояс и валюту...")
+	_ = c.Notify(telebot.Typing)
 
 	// Getting data using gemini
 	slog.InfoContext(ctx, "Отправляем запрос в gemini для определения часового пояса и валюты",
