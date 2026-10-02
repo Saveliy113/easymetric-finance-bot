@@ -205,7 +205,7 @@ func cancelTransactionEditingMarkup(transactionID int64) *telebot.ReplyMarkup {
 func NewMenuUI() *MenuUI {
 	markup := &telebot.ReplyMarkup{
 		ResizeKeyboard: true,
-		IsPersistent:   true,
+		IsPersistent:   false,
 	}
 
 	btnTable := markup.Text("📊 Таблица")
