@@ -105,3 +105,25 @@ func (r *Router) handleSheetURLInput(ctx context.Context, c telebot.Context, use
 
 	return c.Send(welcomeMessage, telebot.ModeMarkdown, r.menuUI.ReplyMenu)
 }
+
+func (r *Router) handleSheetStep(ctx context.Context, c telebot.Context) error {
+	slog.InfoContext(ctx, "Отправка шага подключения Google Таблицы",
+		slog.Int64("user_id", c.Sender().ID),
+	)
+
+	nextStepText := fmt.Sprintf(
+		"📍 <b>Шаг 3 из 3: Подключение Google Таблицы</b>\n\n"+
+			"1. <a href=\"%s\">Создай копию шаблона таблицы EM Personal Finances</a>\n"+
+			"2. Выдай доступ на редактирование сервисному аккаунту бота:\n<code>%s</code>\n\n"+
+			"3. Отправь ссылку на свою готовую копию таблицы в ответном сообщении:",
+		r.cfg.TemplateSheetURL,
+		r.cfg.GoogleServiceAccountEmail,
+	)
+
+	photo := &telebot.Photo{
+		File:    telebot.FromDisk("assets/images/em_fin_template_access.png"),
+		Caption: nextStepText,
+	}
+
+	return c.Send(photo, telebot.ModeHTML)
+}

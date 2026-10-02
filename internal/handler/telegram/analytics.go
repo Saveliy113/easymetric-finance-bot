@@ -64,6 +64,7 @@ func (r *Router) handleAnalyticsDatesInput(ctx context.Context, c telebot.Contex
 			slog.Int64("user_id", user.TelegramID),
 		)
 		waitVoiceMsg, _ := r.bot.Send(c.Chat(), "🎙 Слушаю голосовое...")
+		_ = c.Notify(telebot.Typing)
 
 		// Downloading audio file from tg
 		voiceFile, err := r.bot.File(&c.Message().Voice.File)
@@ -119,6 +120,7 @@ func (r *Router) handleAnalyticsDatesInput(ctx context.Context, c telebot.Contex
 
 func (r *Router) runFinancialAnalytics(ctx context.Context, c telebot.Context, user *domain.User, queryText string) error {
 	waitMsg, _ := r.bot.Send(c.Chat(), "🔍 Анализирую транзакции...")
+	_ = c.Notify(telebot.Typing)
 	defer func() {
 		if waitMsg != nil {
 			_ = r.bot.Delete(waitMsg)

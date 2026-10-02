@@ -34,6 +34,7 @@ func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, us
 			slog.Int64("user_id", user.TelegramID),
 		)
 		waitVoiceMsg, _ := r.bot.Send(c.Chat(), "🎙 Слушаю голосовое...")
+		_ = c.Notify(telebot.Typing)
 
 		// Downloading audio file from tg
 		voiceFile, err := r.bot.File(&c.Message().Voice.File)
@@ -89,6 +90,7 @@ func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, us
 	}
 
 	waitMsg, _ := r.bot.Send(c.Chat(), "⏳ Обрабатываю операцию...")
+	_ = c.Notify(telebot.Typing)
 
 	// Pass all information to ai service
 	slog.InfoContext(ctx, "Отправляем запрос в gemini для распознавания операции",
@@ -257,8 +259,11 @@ func (r *Router) sendTransactionDescriptionForEditing(c telebot.Context) error {
 
 	// Getting user from the db
 	user, err := r.userRepo.GetByTelegramId(ctx, c.Sender().ID)
-	if err != nil || user == nil {
+	if err != nil {
 		return err
+	}
+	if user == nil {
+		return domain.ErrUserNotFound
 	}
 
 	if user.SpreadsheetID == "" {
@@ -366,8 +371,11 @@ func (r *Router) sendTransactionAmountForEditing(c telebot.Context) error {
 
 	// Getting user from the db
 	user, err := r.userRepo.GetByTelegramId(ctx, c.Sender().ID)
-	if err != nil || user == nil {
+	if err != nil {
 		return err
+	}
+	if user == nil {
+		return domain.ErrUserNotFound
 	}
 
 	if user.SpreadsheetID == "" {
@@ -476,9 +484,13 @@ func (r *Router) handleDeleteTransaction(c telebot.Context) error {
 
 	// Getting user from the db
 	user, err := r.userRepo.GetByTelegramId(ctx, c.Sender().ID)
-	if err != nil || user == nil {
+	if err != nil {
 		_ = c.Respond()
 		return err
+	}
+	if user == nil {
+		_ = c.Respond()
+		return domain.ErrUserNotFound
 	}
 
 	if user.SpreadsheetID == "" {
@@ -529,8 +541,11 @@ func (r *Router) handleCancelTransactionEditing(c telebot.Context) error {
 
 	// Getting user from the db
 	user, err := r.userRepo.GetByTelegramId(ctx, c.Sender().ID)
-	if err != nil || user == nil {
+	if err != nil {
 		return err
+	}
+	if user == nil {
+		return domain.ErrUserNotFound
 	}
 
 	// Searching for an actual transaction row in sheets

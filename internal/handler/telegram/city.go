@@ -23,6 +23,7 @@ func (r *Router) handleCityInput(ctx context.Context, c telebot.Context, user *d
 	}
 
 	waitMsg, _ := r.bot.Send(c.Chat(), "⏳ Определяю часовой пояс и валюту...")
+	_ = c.Notify(telebot.Typing)
 
 	// Getting data using gemini
 	slog.InfoContext(ctx, "Отправляем запрос в gemini для определения часового пояса и валюты",
@@ -35,7 +36,13 @@ func (r *Router) handleCityInput(ctx context.Context, c telebot.Context, user *d
 		_ = r.bot.Delete(waitMsg)
 	}
 
-	if err != nil || !locationInfo.IsValid {
+	// Separate infrastructure errors from validation failures
+	if err != nil {
+		// Gemini is down, network error, etc. — NOT the user's fault
+		return err
+	}
+	if !locationInfo.IsValid {
+		// Gemini responded correctly but said the city is invalid
 		return domain.ErrParsingCity
 	}
 

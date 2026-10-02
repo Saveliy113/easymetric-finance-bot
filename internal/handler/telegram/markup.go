@@ -17,9 +17,8 @@ const (
 	btnIDCancelTransactionClarification = "cancel_transaction_clarification"
 	btnQuickEditTransaction             = "quick_edit_transaction"
 	btnQuickDeleteTransaction           = "quick_delete_transaction"
-	// TODO: rename cause one just open categories menu, while another really changes category
-	btnEditTransactionCategory    = "edit_transaction_category"
-	btnChangeTransactionCategory  = "change_transaction_category"
+	btnOpenTransactionCategoriesMenu    = "open_tx_categories_menu"
+	btnChangeTransactionCategory        = "change_transaction_category"
 	btnEditTransactionAmount      = "edit_transaction_amount"
 	btnEditTransactionDescription = "edit_transaction_description"
 	btnCancelTransactionEditing   = "cancel_transaction_editing"
@@ -73,7 +72,7 @@ func transactionEditingButtonsMarkup(transactionID int) *telebot.ReplyMarkup {
 	markup := &telebot.ReplyMarkup{}
 	transactionIDStr := strconv.Itoa(transactionID)
 
-	btnEdit := markup.Data("🏷 Сменить категорию", btnEditTransactionCategory, transactionIDStr)
+	btnEdit := markup.Data("🏷 Сменить категорию", btnOpenTransactionCategoriesMenu, transactionIDStr)
 	btnEditAmount := markup.Data("💰 Изменить сумму", btnEditTransactionAmount, transactionIDStr)
 	btnEditDescription := markup.Data("✏️ Изменить описание", btnEditTransactionDescription, transactionIDStr)
 	btnCancel := markup.Data("🔙 Отменить", btnCancelTransactionEditing, transactionIDStr)

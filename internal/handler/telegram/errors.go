@@ -156,7 +156,7 @@ func (r *Router) getErrorDescriptors() []errorDescriptor {
 			target: domain.ErrInvalidTransactionAmount,
 			logMsg: "Некорректная сумма транзакции",
 			renderMsg: func(r *Router) string {
-				return "⚠️ Пожалуйста, введите корректное положительное число (например: <code>3500</code> или <code>250.50</code>):"
+				return "⚠️ Пожалуйста, введите корректное положительное число (например: <code>3500</code> или <code>250.50</code>).\n\n<i>Или нажмите «🔙 Отмена» под сообщением выше, чтобы вернуться.</i>"
 			},
 			parseMode: telebot.ModeHTML,
 		},
@@ -164,8 +164,9 @@ func (r *Router) getErrorDescriptors() []errorDescriptor {
 			target: domain.ErrEmptyTransactionDescription,
 			logMsg: "Пустое описание транзакции",
 			renderMsg: func(r *Router) string {
-				return "⚠️ Описание не может быть пустым. Введите новое описание:"
+				return "⚠️ Описание не может быть пустым. Введите новое описание:\n\n<i>Или нажмите «🔙 Отмена» под сообщением выше, чтобы вернуться.</i>"
 			},
+			parseMode: telebot.ModeHTML,
 		},
 		{
 			target: domain.ErrParsingAnalyticsPeriod,
@@ -174,6 +175,13 @@ func (r *Router) getErrorDescriptors() []errorDescriptor {
 				return "⚠️ Не удалось распознать период 😔\nПопробуйте написать, например: <i>«Расходы за прошлую неделю»</i> или <i>«в этом месяце»</i>:"
 			},
 			parseMode: telebot.ModeHTML,
+		},
+		{
+			target: domain.ErrAIServiceUnavailable,
+			logMsg: "Сервис ИИ временно недоступен (перегрузка или сеть)",
+			renderMsg: func(r *Router) string {
+				return "⏳ Сервис временно перегружен. Пожалуйста, попробуй ещё раз через 10–15 секунд."
+			},
 		},
 	}
 }
@@ -226,7 +234,7 @@ func (r *Router) handleError(ctx context.Context, c telebot.Context, err error) 
 
 	// 3. Непредвиденные системные ошибки (500)
 	traceID := trace.FromContext(ctx)
-	slog.InfoContext(ctx, "Внутренний системный сбой",
+	slog.ErrorContext(ctx, "Внутренний системный сбой",
 		slog.Int64("user_id", userID),
 		slog.String("username", username),
 		slog.Any("error", err),
