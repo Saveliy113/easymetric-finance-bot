@@ -44,26 +44,15 @@ func withSheetsTimeout(ctx context.Context) (context.Context, context.CancelFunc
 	return context.WithTimeout(ctx, 25*time.Second)
 }
 
-// TODO: Move to domain maybe
-type TransactionType string
+type TransactionType = domain.TransactionType
 
 const (
-	TypeExpense TransactionType = "expense" // Расход
-	TypeIncome  TransactionType = "income"  // Доход
+	TypeExpense = domain.TypeExpense
+	TypeIncome  = domain.TypeIncome
 )
 
-// TODO: Move to domain
-// Transaction представляет финансовую операцию пользователя
-type Transaction struct {
-	ID          int64           `json:"id" db:"id"`
-	UserID      int64           `json:"user_id" db:"user_id"`         // Telegram User ID
-	Type        TransactionType `json:"type" db:"type"`               // "expense" или "income"
-	Amount      float64         `json:"amount" db:"amount"`           // Числовая сумма без знака валюты
-	Category    string          `json:"category" db:"category"`       // Категория расхода или "Доход"
-	Description string          `json:"description" db:"description"` // Описание (например, "Обед с коллегами")
-	Date        time.Time       `json:"date" db:"date"`               // Дата и время совершения операции
-	CreatedAt   time.Time       `json:"created_at" db:"created_at"`   // Время создания записи в БД
-}
+// Transaction represents a user financial operation (defined in domain)
+type Transaction = domain.Transaction
 
 type FoundTransaction struct {
 	RowIndex    int          // Row number in google sheets

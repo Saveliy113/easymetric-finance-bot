@@ -88,6 +88,7 @@ func (r *Router) handleUseDefaultCategories(c telebot.Context) error {
 		return err
 	}
 
+	_ = c.Send("✅ <b>Категории успешно подключены!</b>", telebot.ModeHTML)
 	return r.handleSheetStep(ctx, c)
 }
 
@@ -153,6 +154,7 @@ func (r *Router) handleUserCustomCategories(ctx context.Context, c telebot.Conte
 		slog.Int64("user_id", user.TelegramID),
 	)
 
+	_ = c.Send("✅ <b>Категории успешно подключены!</b>", telebot.ModeHTML)
 	return r.handleSheetStep(ctx, c)
 }
 
@@ -412,30 +414,6 @@ func (r *Router) handleCancelTransactionClarification(c telebot.Context) error {
 
 	_, _ = r.bot.EditReplyMarkup(c.Message(), nil)
 	return c.Send("❌ Запись транзакции отменена.")
-}
-
-// TODO: move "Категории успешно подключены" to the previous function and move the remaining to sheets
-func (r *Router) handleSheetStep(ctx context.Context, c telebot.Context) error {
-	slog.InfoContext(ctx, "Отправка шага подключения Google Таблицы",
-		slog.Int64("user_id", c.Sender().ID),
-	)
-
-	nextStepText := fmt.Sprintf(
-		"✅ <b>Категории успешно подключены!</b>\n\n"+
-			"📍 <b>Шаг 3 из 3: Подключение Google Таблицы</b>\n\n"+
-			"1. <a href=\"%s\">Создай копию шаблона таблицы EM Personal Finances</a>\n"+
-			"2. Выдай доступ на редактирование сервисному аккаунту бота:\n<code>%s</code>\n\n"+
-			"3. Отправь ссылку на свою готовую копию таблицы в ответном сообщении:",
-		r.cfg.TemplateSheetURL,
-		r.cfg.GoogleServiceAccountEmail,
-	)
-
-	photo := &telebot.Photo{
-		File:    telebot.FromDisk("assets/images/em_fin_template_access.png"),
-		Caption: nextStepText,
-	}
-
-	return c.Send(photo, telebot.ModeHTML)
 }
 
 func (r *Router) sendUserCategoriesForEditing(c telebot.Context) error {
