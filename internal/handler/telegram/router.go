@@ -61,6 +61,8 @@ func (r *Router) Register() {
 	r.bot.Handle(&telebot.InlineButton{Unique: btnCancelTransactionEditing}, r.handleCancelTransactionEditing)
 	r.bot.Handle(&telebot.InlineButton{Unique: btnEditTransactionCategory}, r.sendUserCategoriesForEditing)
 	r.bot.Handle(&telebot.InlineButton{Unique: btnChangeTransactionCategory}, r.changeTransactionCategory)
+	r.bot.Handle(&telebot.InlineButton{Unique: btnEditTransactionDescription}, r.sendTransactionDescriptionForEditing)
+	r.bot.Handle(&telebot.InlineButton{Unique: btnEditTransactionAmount}, r.sendTransactionAmountForEditing)
 	r.bot.Handle(&telebot.InlineButton{Unique: btnBackToEditingTransaction}, r.sendTransactionEditingButtons)
 
 	// Main menu handlers
@@ -116,6 +118,10 @@ func (r *Router) handleIncomingMessage(c telebot.Context) error {
 		return r.handleChangeTableURLInput(ctx, c, user)
 	case domain.StateAwaitingAnalyticsDates:
 		return r.handleAnalyticsDatesInput(ctx, c, user)
+	case domain.StateAwaitingEditAmount:
+		return r.handleEditTransactionAmount(ctx, c, user)
+	case domain.StateAwaitingEditDescription:
+		return r.handleEditTransactionDescription(ctx, c, user)
 	case domain.StateReady:
 		return r.handleMoneyOperation(ctx, c, user)
 	}
