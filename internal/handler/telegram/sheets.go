@@ -71,6 +71,11 @@ func (r *Router) handleSheetURLInput(ctx context.Context, c telebot.Context, use
 		slog.String("sheet_id", sheetID),
 	)
 
+	// Syncing last transaction id from sheet if table already has transactions to avoid ID collisions
+	if maxID, err := r.sheetsService.GetMaxTransactionID(ctx, sheetID); err == nil && maxID > user.LastTransactionID {
+		user.LastTransactionID = maxID
+	}
+
 	user.SpreadsheetID = sheetID
 	user.State = domain.StateReady
 

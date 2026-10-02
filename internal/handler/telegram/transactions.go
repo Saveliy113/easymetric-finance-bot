@@ -20,34 +20,6 @@ func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, us
 		return domain.ErrSheetNotConfigured
 	}
 
-	// Cleaning inline editing buttons
-	// Returning previous message to clean receipt state (without buttons)
-	if user.LastMessageID > 0 {
-		prevMsg := &telebot.Message{
-			ID:   user.LastMessageID,
-			Chat: c.Chat(),
-		}
-
-		// Если у пользователя был сохранен ID прошлой операции, восстанавливаем текст чека
-		if user.LastTransactionID > 0 {
-			transactionRow, err := r.sheetsService.FindTransactionByID(ctx, user.SpreadsheetID, user.LastTransactionID)
-			if err == nil && transactionRow != nil {
-				prevTx := transactionRow.Transaction
-
-				prevTransactionResponse, _ := basicTransactionMarkup(prevTx, user)
-
-				// Передаем пустую разметку &telebot.ReplyMarkup{} — это стирает все кнопки
-				// Ошибку игнорируем (_, _), чтобы "message is not modified" не прерывала обработку
-				_, _ = r.bot.Edit(prevMsg, prevTransactionResponse, &telebot.ReplyMarkup{}, telebot.ModeHTML)
-			} else {
-				// Если по какой-то причине запись не найдена, просто стираем кнопки
-				_, _ = r.bot.EditReplyMarkup(prevMsg, nil)
-			}
-		} else {
-			_, _ = r.bot.EditReplyMarkup(prevMsg, nil)
-		}
-	}
-
 	// Detect the message type: text or voice and get message text
 	var inputText string
 
@@ -262,9 +234,56 @@ func (r *Router) sendTransactionEditingButtons(c telebot.Context) error {
 }
 
 func (r *Router) handleDeleteTransaction(c telebot.Context) error {
-	fmt.Println("Transaction for deleting: ", c.Data())
+	ctx := c.Get(ContextKey).(context.Context)
 
-	return nil
+	// Getting transaction id from callback data
+	txIDStr := c.Data()
+	txID, err := strconv.Atoi(txIDStr)
+	if err != nil {
+		_ = c.Respond()
+		return fmt.Errorf("invalid transaction id in callback data (%s): %w", txIDStr, err)
+	}
+
+	// Getting user data
+	user, err := r.userRepo.GetByTelegramId(ctx, c.Sender().ID)
+	if err != nil || user == nil {
+		_ = c.Respond()
+		return err
+	}
+
+	if user.SpreadsheetID == "" {
+		_ = c.Respond()
+		return domain.ErrSheetNotConfigured
+	}
+
+	slog.InfoContext(ctx, "Удаление транзакции по запросу пользователя",
+		slog.Int64("user_id", user.TelegramID),
+		slog.Int("transaction_id", txID),
+	)
+
+	// Deleting transaction from Google Sheets
+	deletedTx, err := r.sheetsService.DeleteTransaction(ctx, user.SpreadsheetID, txID)
+	if err != nil {
+		_ = c.Respond()
+		return err
+	}
+
+	// Resetting user state and draft editing reference
+	user.State = domain.StateReady
+	user.DraftEditTxID = 0
+	if err := r.userRepo.Upsert(ctx, user); err != nil {
+		_ = c.Respond()
+		return err
+	}
+
+	// Telegram popup toast notification
+	_ = c.Respond(&telebot.CallbackResponse{
+		Text: fmt.Sprintf("Операция #%d удалена", txID),
+	})
+
+	textResponse := deletedTransactionText(deletedTx, user)
+
+	return c.Edit(textResponse, &telebot.ReplyMarkup{}, telebot.ModeHTML)
 }
 
 func (r *Router) handleCancelTransactionEditing(c telebot.Context) error {
@@ -294,8 +313,9 @@ func (r *Router) handleCancelTransactionEditing(c telebot.Context) error {
 	textResponse, menu := basicTransactionMarkup(found.Transaction, user)
 
 	// Guaranteeing FSM state reset
-	if user.State != domain.StateReady {
+	if user.State != domain.StateReady || user.DraftEditTxID != 0 {
 		user.State = domain.StateReady
+		user.DraftEditTxID = 0
 		_ = r.userRepo.Upsert(ctx, user)
 	}
 

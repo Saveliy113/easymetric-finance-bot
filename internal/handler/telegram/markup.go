@@ -132,6 +132,41 @@ func basicTransactionMarkup(transaction *sheets.Transaction, user *domain.User) 
 	return textResponse, menu
 }
 
+func deletedTransactionText(transaction *sheets.Transaction, user *domain.User) string {
+	dateStr := ""
+	if !transaction.Date.IsZero() {
+		dateStr = transaction.Date.Format("02.01.2006 15:04")
+	}
+
+	if transaction.Type == sheets.TypeIncome {
+		return fmt.Sprintf(
+			"🗑 <b>Доход #%d удален!</b>\n\n"+
+				"• <b>Сумма:</b> <s>%.2f %s</s>\n"+
+				"• <b>Описание:</b> <s>%s</s>\n"+
+				"• <b>Дата:</b> <code>%s</code>",
+			transaction.ID,
+			transaction.Amount,
+			user.Currency,
+			transaction.Description,
+			dateStr,
+		)
+	}
+
+	return fmt.Sprintf(
+		"🗑 <b>Расход #%d удален!</b>\n\n"+
+			"• <b>Сумма:</b> <s>%.2f %s</s>\n"+
+			"• <b>Категория:</b> <s>%s</s>\n"+
+			"• <b>Описание:</b> <s>%s</s>\n"+
+			"• <b>Дата:</b> <code>%s</code>",
+		transaction.ID,
+		transaction.Amount,
+		user.Currency,
+		transaction.Category,
+		transaction.Description,
+		dateStr,
+	)
+}
+
 func transactionCategoriesMarkup(transactionID int, categories []string) *telebot.ReplyMarkup {
 	markup := &telebot.ReplyMarkup{}
 	var rows []telebot.Row
