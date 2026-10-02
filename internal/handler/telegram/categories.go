@@ -362,18 +362,18 @@ func (r *Router) handleSelectClarifiedCategory(c telebot.Context) error {
 		return err
 	}
 
-	// Send result message
+	// Send result message by editing clarification message in-place
 	textResponse, menu := basicTransactionMarkup(transaction, user)
 
-	// Delete previous clarification notification
-	_ = r.bot.Delete(c.Message())
-
-	// Delete inline clarification buttons
-	_, _ = r.bot.EditReplyMarkup(c.Message(), nil)
-
-	sentMessage, err := r.bot.Send(c.Chat(), textResponse, menu, telebot.ModeHTML)
-	if err != nil {
-		return err
+	cardMsgID := 0
+	if err := c.Edit(textResponse, menu, telebot.ModeHTML); err != nil {
+		sentMessage, sendErr := r.bot.Send(c.Chat(), textResponse, menu, telebot.ModeHTML)
+		if sendErr != nil {
+			return sendErr
+		}
+		cardMsgID = sentMessage.ID
+	} else if c.Message() != nil {
+		cardMsgID = c.Message().ID
 	}
 
 	// Updating user (reseting state, saving last sent message id)
@@ -385,7 +385,9 @@ func (r *Router) handleSelectClarifiedCategory(c telebot.Context) error {
 
 	user.PendingTransaction = ""
 	user.State = domain.StateReady
-	user.LastMessageID = sentMessage.ID
+	if cardMsgID > 0 {
+		user.LastMessageID = cardMsgID
+	}
 
 	if err := r.userRepo.Upsert(ctx, user); err != nil {
 		return err
@@ -412,8 +414,7 @@ func (r *Router) handleCancelTransactionClarification(c telebot.Context) error {
 		return err
 	}
 
-	_, _ = r.bot.EditReplyMarkup(c.Message(), nil)
-	return c.Send("❌ Запись транзакции отменена.")
+	return c.Edit("❌ Запись операции отменена.", &telebot.ReplyMarkup{})
 }
 
 func (r *Router) sendUserCategoriesForEditing(c telebot.Context) error {
@@ -428,6 +429,10 @@ func (r *Router) sendUserCategoriesForEditing(c telebot.Context) error {
 	user, err := r.userRepo.GetByTelegramId(ctx, c.Sender().ID)
 	if err != nil {
 		return err
+	}
+	if c.Message() != nil {
+		user.LastMessageID = c.Message().ID
+		_ = r.userRepo.Upsert(ctx, user)
 	}
 
 	// Unmarshal user categories

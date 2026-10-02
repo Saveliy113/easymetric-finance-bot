@@ -213,6 +213,9 @@ func (r *Router) sendTransactionEditingButtons(c telebot.Context) error {
 	// Resetting user state and draft editing reference
 	user.State = domain.StateReady
 	user.DraftEditTxID = 0
+	if c.Message() != nil {
+		user.LastMessageID = c.Message().ID
+	}
 	if err := r.userRepo.Upsert(ctx, user); err != nil {
 		return err
 	}
@@ -284,6 +287,9 @@ func (r *Router) sendTransactionDescriptionForEditing(c telebot.Context) error {
 	// Updating user state to await description input
 	user.State = domain.StateAwaitingEditDescription
 	user.DraftEditTxID = int64(transactionID)
+	if c.Message() != nil {
+		user.LastMessageID = c.Message().ID
+	}
 	if err := r.userRepo.Upsert(ctx, user); err != nil {
 		return err
 	}
@@ -332,6 +338,11 @@ func (r *Router) handleEditTransactionDescription(ctx context.Context, c telebot
 		return err
 	}
 
+	// Delete user's text message with the new description to keep the chat clean
+	_ = c.Delete()
+
+	cardMsgID := user.LastMessageID
+
 	// Resetting user state and draft editing reference
 	user.State = domain.StateReady
 	user.DraftEditTxID = 0
@@ -349,8 +360,20 @@ func (r *Router) handleEditTransactionDescription(ctx context.Context, c telebot
 		return c.Send(fmt.Sprintf("✅ Описание операции #%d успешно обновлено!", transactionID), telebot.ModeHTML)
 	}
 
-	// Send result message
+	// Update original card message in place
 	textResponse, menu := basicTransactionMarkup(transactionRow.Transaction, user)
+	if cardMsgID > 0 {
+		targetMsg := &telebot.Message{
+			ID:   cardMsgID,
+			Chat: c.Chat(),
+		}
+		_, err := r.bot.Edit(targetMsg, textResponse, menu, telebot.ModeHTML)
+		if err == nil {
+			return nil
+		}
+		slog.WarnContext(ctx, "Не удалось отредактировать исходное сообщение карточки через bot.Edit, отправляем новую", slog.Any("error", err))
+	}
+
 	return c.Send(textResponse, menu, telebot.ModeHTML)
 }
 
@@ -396,6 +419,9 @@ func (r *Router) sendTransactionAmountForEditing(c telebot.Context) error {
 	// Updating user state to await amount input
 	user.State = domain.StateAwaitingEditAmount
 	user.DraftEditTxID = int64(transactionID)
+	if c.Message() != nil {
+		user.LastMessageID = c.Message().ID
+	}
 	if err := r.userRepo.Upsert(ctx, user); err != nil {
 		return err
 	}
@@ -449,6 +475,11 @@ func (r *Router) handleEditTransactionAmount(ctx context.Context, c telebot.Cont
 		return err
 	}
 
+	// Delete user's text message with the new amount to keep the chat clean
+	_ = c.Delete()
+
+	cardMsgID := user.LastMessageID
+
 	// Resetting user state and draft editing reference
 	user.State = domain.StateReady
 	user.DraftEditTxID = 0
@@ -466,8 +497,20 @@ func (r *Router) handleEditTransactionAmount(ctx context.Context, c telebot.Cont
 		return c.Send(fmt.Sprintf("✅ Сумма операции #%d успешно обновлена!", transactionID), telebot.ModeHTML)
 	}
 
-	// Send result message
+	// Update original card message in place
 	textResponse, menu := basicTransactionMarkup(transactionRow.Transaction, user)
+	if cardMsgID > 0 {
+		targetMsg := &telebot.Message{
+			ID:   cardMsgID,
+			Chat: c.Chat(),
+		}
+		_, err := r.bot.Edit(targetMsg, textResponse, menu, telebot.ModeHTML)
+		if err == nil {
+			return nil
+		}
+		slog.WarnContext(ctx, "Не удалось отредактировать исходное сообщение карточки через bot.Edit, отправляем новую", slog.Any("error", err))
+	}
+
 	return c.Send(textResponse, menu, telebot.ModeHTML)
 }
 
@@ -560,6 +603,9 @@ func (r *Router) handleCancelTransactionEditing(c telebot.Context) error {
 	// Resetting user state and draft editing reference
 	user.State = domain.StateReady
 	user.DraftEditTxID = 0
+	if c.Message() != nil {
+		user.LastMessageID = c.Message().ID
+	}
 	if err := r.userRepo.Upsert(ctx, user); err != nil {
 		return err
 	}
