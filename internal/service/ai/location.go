@@ -55,6 +55,9 @@ func NewGeminiService(ctx context.Context, apiKey string) *GeminiService {
 }
 
 func (s *GeminiService) ParseCity(ctx context.Context, cityName string) (*LocationInfo, error) {
+	// Sanitize user input
+	cityName = SanitizeUserInput(cityName)
+
 	slog.InfoContext(ctx, "Определяем город, часовой пояс и валюту через Gemini", slog.String("cityName", cityName))
 
 	prompt := fmt.Sprintf(cityResolutionPrompt, cityName)
@@ -70,7 +73,7 @@ func (s *GeminiService) ParseCity(ctx context.Context, cityName string) (*Locati
 		config,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("gemini request failed: %w", err)
+		return nil, wrapGeminiError(err, "gemini city resolution failed")
 	}
 
 	rawText := strings.TrimSpace(result.Text())

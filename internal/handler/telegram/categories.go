@@ -114,7 +114,13 @@ func (r *Router) handleUserCustomCategories(ctx context.Context, c telebot.Conte
 		_ = r.bot.Delete(waitMsg)
 	}
 
-	if err != nil || !categoriesInfo.IsValid {
+	// Separate infrastructure errors from validation failures
+	if err != nil {
+		// Gemini is down, network error, etc. — NOT the user's fault
+		return err
+	}
+	if !categoriesInfo.IsValid {
+		// Gemini responded correctly but said the categories are invalid
 		return domain.ErrParsingCategories
 	}
 

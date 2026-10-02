@@ -35,4 +35,7 @@ var (
 
 	// Analytics errors
 	ErrParsingAnalyticsPeriod = errors.New("failed to parse analytics period")
+
+	// AI service errors
+	ErrAIServiceUnavailable = errors.New("AI service is temporarily unavailable")
 )

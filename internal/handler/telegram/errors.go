@@ -175,6 +175,13 @@ func (r *Router) getErrorDescriptors() []errorDescriptor {
 			},
 			parseMode: telebot.ModeHTML,
 		},
+		{
+			target: domain.ErrAIServiceUnavailable,
+			logMsg: "Сервис ИИ временно недоступен (перегрузка или сеть)",
+			renderMsg: func(r *Router) string {
+				return "⏳ Сервис временно перегружен. Пожалуйста, попробуй ещё раз через 10–15 секунд."
+			},
+		},
 	}
 }
 
@@ -226,7 +233,7 @@ func (r *Router) handleError(ctx context.Context, c telebot.Context, err error) 
 
 	// 3. Непредвиденные системные ошибки (500)
 	traceID := trace.FromContext(ctx)
-	slog.InfoContext(ctx, "Внутренний системный сбой",
+	slog.ErrorContext(ctx, "Внутренний системный сбой",
 		slog.Int64("user_id", userID),
 		slog.String("username", username),
 		slog.Any("error", err),

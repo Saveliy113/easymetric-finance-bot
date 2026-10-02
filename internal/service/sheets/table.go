@@ -20,6 +20,22 @@ type SheetsService struct {
 	srv *sheets.Service
 }
 
+// wrapSheetsError maps Google API HTTP errors to domain errors for user-friendly messages
+func wrapSheetsError(err error) error {
+	var gErr *googleapi.Error
+	if errors.As(err, &gErr) {
+		switch gErr.Code {
+		case http.StatusNotFound:
+			return domain.ErrSheetNotFound
+		case http.StatusForbidden:
+			return domain.ErrSheetAccessDenied
+		default:
+			return fmt.Errorf("%w: %s", domain.ErrGoogleAPIFailed, gErr.Message)
+		}
+	}
+	return err
+}
+
 // TODO: Move to domain maybe
 type TransactionType string
 
@@ -54,7 +70,7 @@ func (s *SheetsService) FindTransactionByID(ctx context.Context, spreadsheetID s
 		Context(ctx).
 		Do()
 	if err != nil {
-		return nil, err
+		return nil, wrapSheetsError(err)
 	}
 
 	targetIDStr := strconv.Itoa(targetID)
@@ -113,7 +129,7 @@ func (s *SheetsService) FetchAllTransactions(ctx context.Context, spreadsheetID 
 		Context(ctx).
 		Do()
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch transactions: %w", err)
+		return nil, wrapSheetsError(fmt.Errorf("failed to fetch transactions: %w", err))
 	}
 
 	var transactions []*Transaction

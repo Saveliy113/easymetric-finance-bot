@@ -51,14 +51,39 @@ func (r *Router) handleStartConfiguration(c telebot.Context) error {
 	// Delete inline buttons from the previous message
 	_, _ = r.bot.EditReplyMarkup(c.Message(), nil)
 
-	// Save user in the db
+	// Check if user already exists and is fully configured
+	existingUser, err := r.userRepo.GetByTelegramId(ctx, sender.ID)
+	if err == nil && existingUser != nil {
+		if existingUser.State == domain.StateReady && existingUser.SpreadsheetID != "" {
+			// User is already registered and configured — redirect to main menu
+			slog.InfoContext(ctx, "Пользователь уже зарегистрирован, перенаправляем в главное меню",
+				slog.Int64("user_id", sender.ID),
+			)
+			return c.Send(
+				"👋 Ты уже зарегистрирован и настроен!\n\n"+
+					"Используй меню внизу для работы с ботом.\n"+
+					"Если хочешь изменить настройки — нажми ⚙️ *Настройки*.",
+				telebot.ModeMarkdown,
+				r.menuUI.ReplyMenu,
+			)
+		}
+
+		// User exists but stuck in mid-onboarding — resume from current step
+		slog.InfoContext(ctx, "Пользователь в процессе настройки, продолжаем с текущего шага",
+			slog.Int64("user_id", sender.ID),
+			slog.String("state", string(existingUser.State)),
+		)
+		return r.resumeOnboarding(ctx, c, existingUser)
+	}
+
+	// New user — proceed with fresh registration
 	user := &domain.User{
 		TelegramID: sender.ID,
 		Username:   sender.Username,
 		State:      domain.StateAwaitingCity,
 	}
 
-	slog.InfoContext(ctx, "Создаем/сбрасываем профиль пользователя в БД",
+	slog.InfoContext(ctx, "Создаем профиль нового пользователя в БД",
 		slog.Int64("user_id", sender.ID),
 		slog.String("state", string(user.State)),
 	)
@@ -68,6 +93,23 @@ func (r *Router) handleStartConfiguration(c telebot.Context) error {
 	}
 
 	return r.handleCityStep(ctx, c)
+}
+
+// resumeOnboarding sends the user to the onboarding step they're currently on
+func (r *Router) resumeOnboarding(ctx context.Context, c telebot.Context, user *domain.User) error {
+	switch user.State {
+	case domain.StateAwaitingCity:
+		return r.handleCityStep(ctx, c)
+	case domain.StateAwaitingCategories:
+		return r.handleCategoriesStep(ctx, c)
+	case domain.StateAwaitingSheetURL:
+		return r.handleSheetStep(ctx, c)
+	default:
+		// Unknown or intermediate state — reset to city step
+		user.State = domain.StateAwaitingCity
+		_ = r.userRepo.Upsert(ctx, user)
+		return r.handleCityStep(ctx, c)
+	}
 }
 
 func (r *Router) handleCityStep(ctx context.Context, c telebot.Context) error {
@@ -81,3 +123,4 @@ func (r *Router) handleCityStep(ctx context.Context, c telebot.Context) error {
 		telebot.ModeMarkdown,
 	)
 }
+

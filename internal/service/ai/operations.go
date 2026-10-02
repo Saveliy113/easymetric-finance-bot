@@ -2,15 +2,21 @@ package ai
 
 import (
 	"context"
+	"em-finance-bot/internal/domain"
 	"em-finance-bot/internal/service/sheets"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"strings"
 	"time"
 
+	"google.golang.org/api/googleapi"
 	"google.golang.org/genai"
 )
+
+// MaxUserInputLength limits the maximum user message length to prevent prompt abuse
+const MaxUserInputLength = 500
 
 type ParsedTransaction struct {
 	IsValid             bool      `json:"is_valid"`
@@ -99,7 +105,7 @@ func (s *GeminiService) TranscribeVoice(ctx context.Context, data []byte) (strin
 	)
 
 	if err != nil {
-		return "", fmt.Errorf("error recognizing voice message: %w", err)
+		return "", wrapGeminiError(err, "error recognizing voice message")
 	}
 
 	transcription := strings.TrimSpace(result.Text())
@@ -124,6 +130,9 @@ func (s *GeminiService) ParseTransaction(
 		return nil, fmt.Errorf("failed to load user timezone %q: %w", userTZ, err)
 	}
 	now := time.Now().In(loc)
+
+	// Sanitize user input to limit length and prevent prompt abuse
+	rawText = SanitizeUserInput(rawText)
 
 	prompt := fmt.Sprintf(
 		parseTransactionPrompt,
@@ -182,7 +191,7 @@ func (s *GeminiService) ParseTransaction(
 
 	result, err := s.client.Models.GenerateContent(ctx, "gemini-3.5-flash-lite", genai.Text(prompt), config)
 	if err != nil {
-		return nil, fmt.Errorf("error analyzing transaction: %w", err)
+		return nil, wrapGeminiError(err, "error analyzing transaction")
 	}
 
 	var transaction ParsedTransaction
@@ -211,4 +220,81 @@ func (p *ParsedTransaction) ToTransaction(transactionId int64, userID int64) *sh
 		Date:        p.Date,
 		CreatedAt:   time.Now(),
 	}
+}
+
+// isRetryableGeminiError checks if the error is a transient Gemini API failure
+func isRetryableGeminiError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errMsg := strings.ToLower(err.Error())
+
+	// Network-level errors
+	if _, ok := err.(net.Error); ok {
+		return true
+	}
+
+	// Google API HTTP errors (429, 500, 503)
+	var gErr *googleapi.Error
+	if ok := isGoogleAPIError(err, &gErr); ok {
+		switch gErr.Code {
+		case 429, 500, 502, 503:
+			return true
+		}
+	}
+
+	// Common transient error messages from Gemini
+	retryablePatterns := []string{
+		"resource exhausted",
+		"unavailable",
+		"deadline exceeded",
+		"internal error",
+		"overloaded",
+		"rate limit",
+		"quota",
+		"503",
+		"429",
+	}
+
+	for _, pattern := range retryablePatterns {
+		if strings.Contains(errMsg, pattern) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isGoogleAPIError(err error, target **googleapi.Error) bool {
+	for err != nil {
+		if gErr, ok := err.(*googleapi.Error); ok {
+			*target = gErr
+			return true
+		}
+		// Try to unwrap
+		if unwrapper, ok := err.(interface{ Unwrap() error }); ok {
+			err = unwrapper.Unwrap()
+		} else {
+			break
+		}
+	}
+	return false
+}
+
+// wrapGeminiError wraps transient Gemini errors as ErrAIServiceUnavailable
+func wrapGeminiError(err error, operation string) error {
+	if isRetryableGeminiError(err) {
+		return fmt.Errorf("%w: %s: %v", domain.ErrAIServiceUnavailable, operation, err)
+	}
+	return fmt.Errorf("%s: %w", operation, err)
+}
+
+// SanitizeUserInput limits input length for AI processing
+func SanitizeUserInput(input string) string {
+	input = strings.TrimSpace(input)
+	if len([]rune(input)) > MaxUserInputLength {
+		input = string([]rune(input)[:MaxUserInputLength])
+	}
+	return input
 }

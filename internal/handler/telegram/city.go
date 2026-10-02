@@ -35,7 +35,13 @@ func (r *Router) handleCityInput(ctx context.Context, c telebot.Context, user *d
 		_ = r.bot.Delete(waitMsg)
 	}
 
-	if err != nil || !locationInfo.IsValid {
+	// Separate infrastructure errors from validation failures
+	if err != nil {
+		// Gemini is down, network error, etc. — NOT the user's fault
+		return err
+	}
+	if !locationInfo.IsValid {
+		// Gemini responded correctly but said the city is invalid
 		return domain.ErrParsingCity
 	}
 

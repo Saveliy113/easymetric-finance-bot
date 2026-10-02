@@ -108,6 +108,9 @@ func (s *GeminiService) ExtractDateFilter(
 		_ = json.Unmarshal([]byte(categoriesCache), &categories)
 	}
 
+	// Sanitize user query input
+	userQuery = SanitizeUserInput(userQuery)
+
 	prompt := fmt.Sprintf(
 		extractDateFilterPromptTemplate,
 		now.Format("2006-01-02, Monday"),
@@ -144,7 +147,7 @@ func (s *GeminiService) ExtractDateFilter(
 		config,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("gemini extract date filter failed: %w", err)
+		return nil, wrapGeminiError(err, "gemini extract date filter failed")
 	}
 
 	var query DateFilterQuery
@@ -202,7 +205,7 @@ func (s *GeminiService) GenerateFinancialReport(
 		config,
 	)
 	if err != nil {
-		return "", fmt.Errorf("gemini financial report generation failed: %w", err)
+		return "", wrapGeminiError(err, "gemini financial report generation failed")
 	}
 
 	report := strings.TrimSpace(result.Text())

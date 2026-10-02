@@ -40,6 +40,9 @@ type CategoriesResponse struct {
 }
 
 func (s *GeminiService) ParseCategories(ctx context.Context, categories string) (*CategoriesResponse, error) {
+	// Sanitize user input
+	categories = SanitizeUserInput(categories)
+
 	slog.InfoContext(ctx, "Отправляем запрос в Gemini для валидации категорий", slog.String("categories", categories))
 
 	prompt := fmt.Sprintf(categoriesParsingPrompt, categories)
@@ -55,7 +58,7 @@ func (s *GeminiService) ParseCategories(ctx context.Context, categories string) 
 		config,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("gemini request failed: %w", err)
+		return nil, wrapGeminiError(err, "gemini categories parsing failed")
 	}
 
 	rawText := strings.TrimSpace(result.Text())
