@@ -44,6 +44,19 @@ func withSheetsTimeout(ctx context.Context) (context.Context, context.CancelFunc
 	return context.WithTimeout(ctx, 25*time.Second)
 }
 
+// sanitizeSheetCell escapes formulas in strings to prevent CSV/Formula injection in spreadsheets.
+// Values starting with '=', '+', '-', '@', '\t', '\r' are prefixed with a single quote.
+func sanitizeSheetCell(val string) string {
+	trimmed := strings.TrimSpace(val)
+	if len(trimmed) > 0 {
+		switch trimmed[0] {
+		case '=', '+', '-', '@', '\t', '\r':
+			return "'" + trimmed
+		}
+	}
+	return val
+}
+
 type TransactionType = domain.TransactionType
 
 const (
@@ -300,9 +313,9 @@ func (s *SheetsService) SetupUserCategories(
 		formulaShare := fmt.Sprintf(`=IFERROR(B%d / $B$11, 0)`, row)
 
 		rows = append(rows, []interface{}{
-			cat,          // Category (column A)
-			formulaSum,   // Summ formula (column B)
-			formulaShare, // Share formula (column C)
+			sanitizeSheetCell(cat), // Category (column A)
+			formulaSum,             // Summ formula (column B)
+			formulaShare,           // Share formula (column C)
 		})
 	}
 
@@ -400,12 +413,12 @@ func (s *SheetsService) SaveTransaction(ctx context.Context, spreadsheetID strin
 
 	// Formating row values according columns: E (ID), F (Дата), G (Категория), H (Тип), I (Сумма), J (Описание)
 	rowValues := []interface{}{
-		transaction.ID,          // E: ID
-		dateStr,                 // F: Date (e.g., 2026-08-12 15:04:05)
-		finalCategory,           // G: Category ("Доход" or expense category)
-		displayType,             // H: Type ("Расход" / "Доход")
-		transaction.Amount,      // I: Numerical amount without currency (e.g., 12500)
-		transaction.Description, // J: Description
+		transaction.ID,                   // E: ID
+		dateStr,                          // F: Date (e.g., 2026-08-12 15:04:05)
+		sanitizeSheetCell(finalCategory), // G: Category ("Доход" or expense category)
+		displayType,                      // H: Type ("Расход" / "Доход")
+		transaction.Amount,               // I: Numerical amount without currency (e.g., 12500)
+		sanitizeSheetCell(transaction.Description), // J: Description
 	}
 
 	// Range for adding transaction to the logbook on the "Dashboard" sheet
@@ -456,7 +469,7 @@ func (s *SheetsService) UpdateTransactionCategory(ctx context.Context, spreadshe
 
 	// Defining value range
 	valRange := &sheets.ValueRange{
-		Values: [][]interface{}{{selectedCategory}},
+		Values: [][]interface{}{{sanitizeSheetCell(selectedCategory)}},
 	}
 
 	slog.InfoContext(ctx, "Обновление категории транзакции в Google Таблице",
@@ -532,7 +545,7 @@ func (s *SheetsService) UpdateTransactionDescription(ctx context.Context, spread
 	cellRange := fmt.Sprintf("'Дашборд'!J%d", transaction.RowIndex)
 
 	valRange := &sheets.ValueRange{
-		Values: [][]interface{}{{newDescription}},
+		Values: [][]interface{}{{sanitizeSheetCell(newDescription)}},
 	}
 
 	slog.InfoContext(ctx, "Обновление описания транзакции в Google Таблице",
