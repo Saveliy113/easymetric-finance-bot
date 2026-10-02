@@ -32,4 +32,7 @@ var (
 	ErrTransactionNotFound             = errors.New("transaction not found")
 	ErrInvalidTransactionAmount        = errors.New("invalid transaction amount")
 	ErrEmptyTransactionDescription     = errors.New("empty transaction description")
+
+	// Analytics errors
+	ErrParsingAnalyticsPeriod = errors.New("failed to parse analytics period")
 )

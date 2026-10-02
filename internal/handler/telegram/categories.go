@@ -367,17 +367,6 @@ func (r *Router) handleSelectClarifiedCategory(c telebot.Context) error {
 		return err
 	}
 
-	// Cleaning inline editing buttons
-	if user.LastMessageID > 0 {
-		// Creating message for telebot
-		prevMsg := &telebot.Message{
-			ID:   user.LastMessageID,
-			Chat: &telebot.Chat{ID: user.TelegramID},
-		}
-		// Removing inline buttons for previous message
-		_, _ = r.bot.EditReplyMarkup(prevMsg, nil)
-	}
-
 	// Updating user (reseting state, saving last sent message id)
 	slog.InfoContext(
 		ctx,

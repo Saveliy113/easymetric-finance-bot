@@ -211,6 +211,10 @@ func (s *GeminiService) GenerateFinancialReport(
 	report = strings.TrimSuffix(report, "```")
 	report = strings.TrimSpace(report)
 
+	slog.InfoContext(ctx, "Финансовый отчет успешно сформирован Gemini",
+		slog.String("period_label", periodLabel),
+	)
+
 	return report, nil
 }
 

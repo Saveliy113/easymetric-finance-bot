@@ -181,6 +181,23 @@ func (s *SheetsService) FetchAllTransactions(ctx context.Context, spreadsheetID 
 	return transactions, nil
 }
 
+// GetMaxTransactionID returns the maximum transaction ID existing in the journal
+func (s *SheetsService) GetMaxTransactionID(ctx context.Context, spreadsheetID string) (int, error) {
+	transactions, err := s.FetchAllTransactions(ctx, spreadsheetID)
+	if err != nil {
+		return 0, err
+	}
+
+	maxID := 0
+	for _, tx := range transactions {
+		if int(tx.ID) > maxID {
+			maxID = int(tx.ID)
+		}
+	}
+
+	return maxID, nil
+}
+
 func NewSheetService(ctx context.Context, credentialsFilePath string) *SheetsService {
 	srv, err := sheets.NewService(ctx, option.WithCredentialsFile(credentialsFilePath))
 	if err != nil {
@@ -516,4 +533,78 @@ func (s *SheetsService) UpdateTransactionDescription(ctx context.Context, spread
 	)
 
 	return nil
+}
+
+func (s *SheetsService) getSheetID(ctx context.Context, spreadsheetID string, sheetName string) (int64, error) {
+	ss, err := s.srv.Spreadsheets.Get(spreadsheetID).Fields("sheets.properties").Context(ctx).Do()
+	if err != nil {
+		return 0, fmt.Errorf("error getting spreadsheet metadata: %w", err)
+	}
+
+	for _, sheet := range ss.Sheets {
+		if sheet.Properties != nil && sheet.Properties.Title == sheetName {
+			return sheet.Properties.SheetId, nil
+		}
+	}
+
+	if len(ss.Sheets) > 0 && ss.Sheets[0].Properties != nil {
+		return ss.Sheets[0].Properties.SheetId, nil
+	}
+
+	return 0, fmt.Errorf("sheet %q not found", sheetName)
+}
+
+func (s *SheetsService) DeleteTransaction(ctx context.Context, spreadsheetID string, transactionID int) (*Transaction, error) {
+	// Searching target row number by transaction id
+	found, err := s.FindTransactionByID(ctx, spreadsheetID, transactionID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Getting sheet ID for "Дашборд"
+	sheetID, err := s.getSheetID(ctx, spreadsheetID, "Дашборд")
+	if err != nil {
+		return nil, err
+	}
+
+	slog.InfoContext(ctx, "Удаление транзакции из Google Таблицы",
+		slog.Int("transaction_id", transactionID),
+		slog.Int("row_index", found.RowIndex),
+		slog.String("spreadsheet_id", spreadsheetID),
+	)
+
+	// Deleting range E:J at found.RowIndex and shifting remaining rows up
+	// Columns E to J (0-indexed):
+	// StartColumnIndex: 4 (Column E)
+	// EndColumnIndex: 10 (Column J is 9, so exclusive is 10)
+	// StartRowIndex: found.RowIndex - 1 (0-indexed)
+	// EndRowIndex: found.RowIndex (exclusive)
+	batchReq := &sheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*sheets.Request{
+			{
+				DeleteRange: &sheets.DeleteRangeRequest{
+					Range: &sheets.GridRange{
+						SheetId:          sheetID,
+						StartRowIndex:    int64(found.RowIndex - 1),
+						EndRowIndex:      int64(found.RowIndex),
+						StartColumnIndex: 4,
+						EndColumnIndex:   10,
+					},
+					ShiftDimension: "ROWS",
+				},
+			},
+		},
+	}
+
+	_, err = s.srv.Spreadsheets.BatchUpdate(spreadsheetID, batchReq).Context(ctx).Do()
+	if err != nil {
+		return nil, fmt.Errorf("error while deleting transaction range: %w", err)
+	}
+
+	slog.InfoContext(ctx, "Транзакция успешно удалена из таблицы",
+		slog.Int("transaction_id", transactionID),
+		slog.Int("row_index", found.RowIndex),
+	)
+
+	return found.Transaction, nil
 }
