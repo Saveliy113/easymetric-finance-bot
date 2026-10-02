@@ -14,15 +14,25 @@ import (
 )
 
 func (r *Router) handleMainMenuSummary(c telebot.Context) error {
+	// Getting request context with trace id
 	ctx := c.Get(ContextKey).(context.Context)
+
+	// Getting user from the db
 	user, err := r.userRepo.GetByTelegramId(ctx, c.Sender().ID)
 	if err != nil {
 		return err
 	}
+
+	// Guard against unconfigured sheet
 	if user.SpreadsheetID == "" {
 		return domain.ErrSheetNotConfigured
 	}
 
+	slog.InfoContext(ctx, "Запрос на формирование аналитического отчета",
+		slog.Int64("user_id", user.TelegramID),
+	)
+
+	// Updating user state to await analytics dates
 	user.State = domain.StateAwaitingAnalyticsDates
 	if err := r.userRepo.Upsert(ctx, user); err != nil {
 		return err
@@ -40,12 +50,22 @@ func (r *Router) handleMainMenuSummary(c telebot.Context) error {
 }
 
 func (r *Router) handleAnalyticsDatesInput(ctx context.Context, c telebot.Context, user *domain.User) error {
+	// Detect the message type: text or voice and get message text
 	var inputText string
 
 	if c.Message().Voice == nil {
 		inputText = strings.TrimSpace(c.Text())
+		slog.InfoContext(ctx, "Получен запрос аналитики (текст)",
+			slog.Int64("user_id", user.TelegramID),
+			slog.String("text", inputText),
+		)
 	} else {
+		slog.InfoContext(ctx, "Получен запрос аналитики (голосовое)",
+			slog.Int64("user_id", user.TelegramID),
+		)
 		waitVoiceMsg, _ := r.bot.Send(c.Chat(), "🎙 Слушаю голосовое...")
+
+		// Downloading audio file from tg
 		voiceFile, err := r.bot.File(&c.Message().Voice.File)
 		if err != nil {
 			if waitVoiceMsg != nil {
@@ -63,6 +83,10 @@ func (r *Router) handleAnalyticsDatesInput(ctx context.Context, c telebot.Contex
 			return domain.ErrVoiceDownloadFailed
 		}
 
+		// Getting transcription with Gemini
+		slog.InfoContext(ctx, "Отправляем голосовое на расшифровку в Gemini",
+			slog.Int64("user_id", user.TelegramID),
+		)
 		transcription, err := r.aiService.TranscribeVoice(ctx, voiceBytes)
 		if waitVoiceMsg != nil {
 			_ = r.bot.Delete(waitVoiceMsg)
@@ -71,17 +95,24 @@ func (r *Router) handleAnalyticsDatesInput(ctx context.Context, c telebot.Contex
 		if err != nil || strings.TrimSpace(transcription) == "" {
 			return domain.ErrVoiceTranscriptionFailed
 		}
+
 		inputText = strings.TrimSpace(transcription)
+		slog.InfoContext(ctx, "Голос успешно расшифрован",
+			slog.Int64("user_id", user.TelegramID),
+			slog.String("text", inputText),
+		)
 	}
 
 	if inputText == "" {
 		return domain.ErrEmptyTransaction
 	}
 
+	// Running financial analytics
 	if err := r.runFinancialAnalytics(ctx, c, user, inputText); err != nil {
 		return err
 	}
 
+	// Resetting user state back to ready
 	user.State = domain.StateReady
 	return r.userRepo.Upsert(ctx, user)
 }
@@ -99,11 +130,11 @@ func (r *Router) runFinancialAnalytics(ctx context.Context, c telebot.Context, u
 		slog.String("query", queryText),
 	)
 
-	// 1. Извлечение дат через первый промпт
+	// Extracting date filter using Gemini
 	dateQuery, err := r.aiService.ExtractDateFilter(ctx, queryText, user.Timezone, user.CategoriesCache)
-	if err != nil {
+	if err != nil || dateQuery == nil || dateQuery.StartDate == "" || dateQuery.EndDate == "" {
 		slog.WarnContext(ctx, "Не удалось распознать период", slog.Any("error", err))
-		return c.Send("Не удалось распознать период. Попробуйте написать: <i>«Расходы за прошлую неделю»</i>", telebot.ModeHTML)
+		return domain.ErrParsingAnalyticsPeriod
 	}
 
 	slog.InfoContext(ctx, "Диапазон дат распознан",
@@ -113,13 +144,13 @@ func (r *Router) runFinancialAnalytics(ctx context.Context, c telebot.Context, u
 		slog.String("period_label", dateQuery.PeriodLabel),
 	)
 
-	// 2. Чтение E3:J из Google Таблицы и фильтрация в Go
+	// Fetching all transactions from Google Sheets
 	rows, err := r.sheetsService.FetchAllTransactions(ctx, user.SpreadsheetID)
 	if err != nil {
-		slog.ErrorContext(ctx, "Ошибка при чтении данных из Google Таблицы", slog.Any("error", err))
-		return c.Send("❌ Ошибка при чтении данных из Google Таблицы.")
+		return err
 	}
 
+	// Filtering transactions by date and category
 	filtered := ai.FilterTransactionsByDate(rows, dateQuery.StartDate, dateQuery.EndDate, dateQuery.Category)
 	slog.InfoContext(ctx, "Результат фильтрации транзакций",
 		slog.Int("total_rows", len(rows)),
@@ -129,10 +160,10 @@ func (r *Router) runFinancialAnalytics(ctx context.Context, c telebot.Context, u
 		slog.String("category", dateQuery.Category),
 	)
 
-	// 3. Агрегация сумм в Go (экономит токены и гарантирует точную математику)
+	// Aggregating amounts in Go
 	summaryData := ai.AggregateTransactions(filtered, user.Currency)
 
-	// 4. Генерация текста через второй аналитический промпт
+	// Generating financial report with Gemini
 	periodLabel := dateQuery.PeriodLabel
 	if dateQuery.Category != "" && !strings.Contains(strings.ToLower(periodLabel), strings.ToLower(dateQuery.Category)) {
 		periodLabel = fmt.Sprintf("%s (Категория: %s)", periodLabel, dateQuery.Category)
@@ -140,13 +171,13 @@ func (r *Router) runFinancialAnalytics(ctx context.Context, c telebot.Context, u
 
 	analysisHTML, err := r.aiService.GenerateFinancialReport(ctx, periodLabel, summaryData)
 	if err != nil {
-		slog.ErrorContext(ctx, "Не удалось сформировать отчет", slog.Any("error", err))
-		return c.Send("Не удалось сформировать отчет.")
+		return err
 	}
 
-	if err := c.Send(analysisHTML, telebot.ModeHTML); err != nil {
+	// Send result message
+	if err := c.Send(analysisHTML, telebot.ModeHTML, r.menuUI.ReplyMenu); err != nil {
 		slog.WarnContext(ctx, "Не удалось отправить отчет в ModeHTML, отправляем обычным текстом", slog.Any("error", err))
-		return c.Send(analysisHTML)
+		return c.Send(analysisHTML, r.menuUI.ReplyMenu)
 	}
 
 	return nil

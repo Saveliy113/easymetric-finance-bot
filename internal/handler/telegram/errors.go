@@ -167,6 +167,14 @@ func (r *Router) getErrorDescriptors() []errorDescriptor {
 				return "⚠️ Описание не может быть пустым. Введите новое описание:"
 			},
 		},
+		{
+			target: domain.ErrParsingAnalyticsPeriod,
+			logMsg: "Не удалось распознать период для формирования отчета",
+			renderMsg: func(r *Router) string {
+				return "⚠️ Не удалось распознать период 😔\nПопробуйте написать, например: <i>«Расходы за прошлую неделю»</i> или <i>«в этом месяце»</i>:"
+			},
+			parseMode: telebot.ModeHTML,
+		},
 	}
 }
 
