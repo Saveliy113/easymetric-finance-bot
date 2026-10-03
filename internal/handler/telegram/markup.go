@@ -204,8 +204,7 @@ func cancelTransactionEditingMarkup(transactionID int64) *telebot.ReplyMarkup {
 
 func NewMenuUI() *MenuUI {
 	markup := &telebot.ReplyMarkup{
-		ResizeKeyboard: true,
-		IsPersistent:   false,
+		RemoveKeyboard: true,
 	}
 
 	btnTable := markup.Text("📊 Таблица")
@@ -213,18 +212,22 @@ func NewMenuUI() *MenuUI {
 	btnSettings := markup.Text("⚙️ Настройки")
 	btnHelp := markup.Text("❓ Помощь")
 
-	// Main menu grid
-	markup.Reply(
-		markup.Row(btnSummary, btnTable),
-		markup.Row(btnSettings, btnHelp),
-	)
-
 	return &MenuUI{
 		ReplyMenu:   markup,
 		BtnTable:    btnTable,
 		BtnSummary:  btnSummary,
 		BtnSettings: btnSettings,
 		BtnHelp:     btnHelp,
+	}
+}
+
+// SystemCommands returns the list of bot commands displayed in Telegram native Menu button
+func SystemCommands() []telebot.Command {
+	return []telebot.Command{
+		{Text: "report", Description: "📈 Отчет за период"},
+		{Text: "table", Description: "📊 Google Таблица"},
+		{Text: "settings", Description: "⚙️ Настройки"},
+		{Text: "help", Description: "❓ Помощь"},
 	}
 }
 

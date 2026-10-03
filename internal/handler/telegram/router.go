@@ -67,7 +67,19 @@ func (r *Router) Register() {
 	r.bot.Handle(&telebot.InlineButton{Unique: btnEditTransactionAmount}, r.sendTransactionAmountForEditing)
 	r.bot.Handle(&telebot.InlineButton{Unique: btnBackToEditingTransaction}, r.sendTransactionEditingButtons)
 
-	// Main menu handlers
+	// Register Telegram system menu commands (shows native [Menu] button on mobile)
+	if err := r.bot.SetCommands(SystemCommands()); err != nil {
+		slog.Warn("Не удалось установить команды меню Telegram", slog.Any("error", err))
+	}
+
+	// Slash commands handlers
+	r.bot.Handle("/report", r.handleMainMenuSummary)
+	r.bot.Handle("/summary", r.handleMainMenuSummary)
+	r.bot.Handle("/table", r.handleMainMenuTable)
+	r.bot.Handle("/settings", r.handleMainMenuSettings)
+	r.bot.Handle("/help", r.handleMainMenuHelp)
+
+	// Main menu handlers (legacy reply buttons support)
 	r.bot.Handle(&r.menuUI.BtnHelp, r.handleMainMenuHelp)
 	r.bot.Handle(&r.menuUI.BtnTable, r.handleMainMenuTable)
 	r.bot.Handle(&r.menuUI.BtnSettings, r.handleMainMenuSettings)
