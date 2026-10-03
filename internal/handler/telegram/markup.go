@@ -206,7 +206,6 @@ func NewMenuUI() *MenuUI {
 	markup := &telebot.ReplyMarkup{
 		ResizeKeyboard: true,
 		IsPersistent:   false,
-		OneTimeKeyboard: true,
 	}
 
 	btnTable := markup.Text("📊 Таблица")
