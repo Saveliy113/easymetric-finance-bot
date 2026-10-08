@@ -270,11 +270,11 @@ func cancelSettingsMarkup() *telebot.ReplyMarkup {
 func categoriesManagementMarkup() *telebot.ReplyMarkup {
 	markup := &telebot.ReplyMarkup{}
 	btnAdd := markup.Data("➕ Добавить", btnCategoriesAdd)
-	btnDelete := markup.Data("🗑 Удалить", btnCategoriesDelete)
+	btnArchive := markup.Data("📦 Архивировать", btnCategoriesDelete)
 	btnBack := markup.Data("🔙 Назад", btnCancelSettings)
 
 	markup.Inline(
-		markup.Row(btnAdd, btnDelete),
+		markup.Row(btnAdd, btnArchive),
 		markup.Row(btnBack),
 	)
 
@@ -295,7 +295,10 @@ func categoriesDeleteMarkup(categories []string) *telebot.ReplyMarkup {
 
 	var currentRow []telebot.Btn
 	for idx, cat := range categories {
-		btn := markup.Data("❌ "+cat, btnDeleteCategoryItem, strconv.Itoa(idx))
+		if isArchivedCategory(cat) {
+			continue
+		}
+		btn := markup.Data("📦 "+cat, btnDeleteCategoryItem, strconv.Itoa(idx))
 		currentRow = append(currentRow, btn)
 
 		if len(currentRow) == 2 {
