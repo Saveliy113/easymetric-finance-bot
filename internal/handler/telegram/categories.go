@@ -435,6 +435,12 @@ func (r *Router) handleCancelTransactionClarification(c telebot.Context) error {
 
 func (r *Router) sendUserCategoriesForEditing(c telebot.Context) error {
 	ctx := c.Get(ContextKey).(context.Context)
+
+	// Responding to telegram to stop loading
+	if c.Callback() != nil {
+		_ = c.Respond()
+	}
+
 	transactionIDStr := c.Data()
 	transactionID, err := strconv.Atoi(transactionIDStr)
 	if err != nil {

@@ -192,6 +192,11 @@ func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, us
 func (r *Router) sendTransactionEditingButtons(c telebot.Context) error {
 	ctx := c.Get(ContextKey).(context.Context)
 
+	// Responding to telegram to stop loading
+	if c.Callback() != nil {
+		_ = c.Respond()
+	}
+
 	// Getting transaction id from callback data
 	transactionIDStr := c.Data()
 	transactionID, err := strconv.Atoi(transactionIDStr)
