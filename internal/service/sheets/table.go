@@ -388,6 +388,63 @@ func (s *SheetsService) SetupUserCategories(
 	return nil
 }
 
+// RenameCategoryInJournal updates category name across all historical transactions in column G
+func (s *SheetsService) RenameCategoryInJournal(
+	ctx context.Context,
+	spreadsheetID string,
+	sheetName string,
+	oldCategory string,
+	newCategory string,
+) error {
+	ctx, cancel := withSheetsTimeout(ctx)
+	defer cancel()
+
+	ss, err := s.srv.Spreadsheets.Get(spreadsheetID).Context(ctx).Do()
+	if err != nil {
+		return wrapSheetsError(fmt.Errorf("error getting access to table: %w", err))
+	}
+
+	var targetSheetID int64
+	for _, sheet := range ss.Sheets {
+		if sheetName != "" && sheet.Properties.Title == sheetName {
+			targetSheetID = sheet.Properties.SheetId
+			break
+		}
+	}
+
+	batchReq := &sheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*sheets.Request{
+			{
+				FindReplace: &sheets.FindReplaceRequest{
+					Find:            oldCategory,
+					Replacement:     newCategory,
+					MatchEntireCell: true,
+					MatchCase:       true,
+					Range: &sheets.GridRange{
+						SheetId:          targetSheetID,
+						StartRowIndex:    2,
+						StartColumnIndex: 6, // Column G (Category)
+						EndColumnIndex:   7,
+					},
+				},
+			},
+		},
+	}
+
+	slog.InfoContext(ctx, "Обновление категории в истории транзакций Google Таблицы",
+		slog.String("spreadsheet_id", spreadsheetID),
+		slog.String("old_category", oldCategory),
+		slog.String("new_category", newCategory),
+	)
+
+	_, err = s.srv.Spreadsheets.BatchUpdate(spreadsheetID, batchReq).Context(ctx).Do()
+	if err != nil {
+		return wrapSheetsError(fmt.Errorf("error renaming category in journal: %w", err))
+	}
+
+	return nil
+}
+
 func (s *SheetsService) SaveTransaction(ctx context.Context, spreadsheetID string, transaction *Transaction) error {
 	if transaction == nil {
 		return fmt.Errorf("transaction cannot be empty")

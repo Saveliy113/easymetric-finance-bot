@@ -158,12 +158,27 @@ func (r *Router) handleUserCustomCategories(ctx context.Context, c telebot.Conte
 	return r.handleSheetStep(ctx, c)
 }
 
+func isArchivedCategory(cat string) bool {
+	return strings.HasPrefix(strings.TrimSpace(cat), "[АРХИВ]")
+}
+
+func filterActiveCategories(categories []string) []string {
+	var active []string
+	for _, cat := range categories {
+		if !isArchivedCategory(cat) {
+			active = append(active, cat)
+		}
+	}
+	return active
+}
+
 func (r *Router) sendCategorySuggestions(ctx context.Context, c telebot.Context, transaction *ai.ParsedTransaction, user *domain.User) error {
 	// Unmarshaling user categories
 	var categories []string
 	if err := json.Unmarshal([]byte(user.CategoriesCache), &categories); err != nil {
 		return fmt.Errorf("failed to unmarshal categories: %w", err)
 	}
+	activeCategories := filterActiveCategories(categories)
 
 	// Defining remaining categories
 	suggestedSet := make(map[string]bool)
@@ -173,7 +188,7 @@ func (r *Router) sendCategorySuggestions(ctx context.Context, c telebot.Context,
 	}
 
 	var remainingCategories []string
-	for _, cat := range categories {
+	for _, cat := range activeCategories {
 		clean := strings.ToLower(strings.TrimSpace(cat))
 		if !suggestedSet[clean] {
 			remainingCategories = append(remainingCategories, cat)
@@ -252,6 +267,7 @@ func (r *Router) sendManualCategorySelection(ctx context.Context, c telebot.Cont
 	if err := json.Unmarshal([]byte(user.CategoriesCache), &categories); err != nil {
 		return fmt.Errorf("failed to unmarshal categories: %w", err)
 	}
+	activeCategories := filterActiveCategories(categories)
 
 	// Format clarification message using ModeHTML
 	messageText := fmt.Sprintf(
@@ -273,7 +289,7 @@ func (r *Router) sendManualCategorySelection(ctx context.Context, c telebot.Cont
 	var rows []telebot.Row
 
 	var currentRow []telebot.Btn
-	for _, cat := range categories {
+	for _, cat := range activeCategories {
 		btn := menu.Data(cat, btnIDSelectClarifiedCategory, cat)
 		currentRow = append(currentRow, btn)
 
@@ -440,6 +456,7 @@ func (r *Router) sendUserCategoriesForEditing(c telebot.Context) error {
 	if err := json.Unmarshal([]byte(user.CategoriesCache), &categories); err != nil {
 		return fmt.Errorf("failed to unmarshal user categories: %w", err)
 	}
+	activeCategories := filterActiveCategories(categories)
 
 	// Searching for an actual transaction row in sheets
 	transactionRow, err := r.sheetsService.FindTransactionByID(ctx, user.SpreadsheetID, transactionID)
@@ -447,7 +464,7 @@ func (r *Router) sendUserCategoriesForEditing(c telebot.Context) error {
 		return err
 	}
 
-	categoriesMarkup := transactionCategoriesMarkup(transactionID, categories)
+	categoriesMarkup := transactionCategoriesMarkup(transactionID, activeCategories)
 	text := fmt.Sprintf(
 		"✏️ <b>Редактирование операции #%d</b>\n\n"+
 			"• Текущая выбранная категория: <b>%s</b>\n\n"+
@@ -493,12 +510,13 @@ func (r *Router) changeTransactionCategory(c telebot.Context) error {
 	if err := json.Unmarshal([]byte(user.CategoriesCache), &categories); err != nil {
 		return fmt.Errorf("failed to unmarshal user categories: %w", err)
 	}
+	activeCategories := filterActiveCategories(categories)
 
 	catIdx, err := strconv.Atoi(parts[1])
-	if err != nil || catIdx < 0 || catIdx >= len(categories) {
+	if err != nil || catIdx < 0 || catIdx >= len(activeCategories) {
 		return fmt.Errorf("invalid category index in callback data (%s)", parts[1])
 	}
-	selectedCategory := categories[catIdx]
+	selectedCategory := activeCategories[catIdx]
 
 	// Updating transaction category in sheets
 	err = r.sheetsService.UpdateTransactionCategory(ctx, user.SpreadsheetID, transactionID, selectedCategory)
@@ -554,14 +572,15 @@ func (r *Router) handleSettingsCategoriesMenu(c telebot.Context) error {
 
 	var b strings.Builder
 	b.WriteString("🏷 <b>Управление категориями расходов</b>\n\n")
-	if len(categories) == 0 {
+	activeCategories := filterActiveCategories(categories)
+	if len(activeCategories) == 0 {
 		b.WriteString("<i>Список категорий пуст.</i>\n\n")
 	} else {
 		b.WriteString("<b>Текущие категории:</b>\n")
-		for i, cat := range categories {
+		for i, cat := range activeCategories {
 			b.WriteString(fmt.Sprintf("%d. %s\n", i+1, cat))
 		}
-		b.WriteString(fmt.Sprintf("\n<i>Всего: %d</i>\n\n", len(categories)))
+		b.WriteString(fmt.Sprintf("\n<i>Всего: %d</i>\n\n", len(activeCategories)))
 	}
 	b.WriteString("Выберите действие:")
 
@@ -625,12 +644,14 @@ func (r *Router) handleCategoriesDeleteMenu(c telebot.Context) error {
 		_ = json.Unmarshal([]byte(user.CategoriesCache), &categories)
 	}
 
-	if len(categories) <= 1 {
+	activeCategories := filterActiveCategories(categories)
+	if len(activeCategories) <= 1 {
 		return domain.ErrCannotDeleteLastCategory
 	}
 
-	msg := "🗑 <b>Удаление категорий</b>\n\n" +
-		"Нажмите на категорию, чтобы удалить её из списка и таблицы:"
+	msg := "📦 <b>Архивация категорий</b>\n\n" +
+		"Нажмите на категорию, чтобы перенести её в архив:\n" +
+		"<i>(История трат сохранится в таблице, но бот больше не будет предлагать эту категорию для новых трат)</i>"
 
 	return c.Edit(msg, categoriesDeleteMarkup(categories), telebot.ModeHTML)
 }
@@ -655,11 +676,6 @@ func (r *Router) handleDeleteCategoryClick(c telebot.Context) error {
 		_ = json.Unmarshal([]byte(user.CategoriesCache), &categories)
 	}
 
-	// Checking if user has only one category
-	if len(categories) <= 1 {
-		return domain.ErrCannotDeleteLastCategory
-	}
-
 	// Getting category index from callback data
 	catIdx, err := strconv.Atoi(c.Data())
 	if err != nil || catIdx < 0 || catIdx >= len(categories) {
@@ -667,12 +683,37 @@ func (r *Router) handleDeleteCategoryClick(c telebot.Context) error {
 		return nil
 	}
 
-	deletedCategory := categories[catIdx]
-	categories = append(categories[:catIdx], categories[catIdx+1:]...)
+	oldCategory := categories[catIdx]
+	if isArchivedCategory(oldCategory) {
+		_ = c.Respond(&telebot.CallbackResponse{
+			Text: "Категория уже в архиве",
+		})
+		return nil
+	}
+
+	activeCategories := filterActiveCategories(categories)
+	if len(activeCategories) <= 1 {
+		return domain.ErrCannotDeleteLastCategory
+	}
+
+	archivedCategory := "[АРХИВ] " + oldCategory
+	categories[catIdx] = archivedCategory
 
 	// Sync with Google Sheets
-	if err := r.sheetsService.SetupUserCategories(ctx, user.SpreadsheetID, "Дашборд", categories); err != nil {
-		return err
+	if user.SpreadsheetID != "" {
+		if err := r.sheetsService.SetupUserCategories(ctx, user.SpreadsheetID, "Дашборд", categories); err != nil {
+			return err
+		}
+
+		// Update category name in historical journal transactions
+		if err := r.sheetsService.RenameCategoryInJournal(ctx, user.SpreadsheetID, "Дашборд", oldCategory, archivedCategory); err != nil {
+			slog.WarnContext(ctx, "Не удалось переименовать категорию в журнале операций",
+				slog.Int64("user_id", user.TelegramID),
+				slog.String("old_category", oldCategory),
+				slog.String("new_category", archivedCategory),
+				slog.Any("error", err),
+			)
+		}
 	}
 
 	// Update user in DB
@@ -687,14 +728,14 @@ func (r *Router) handleDeleteCategoryClick(c telebot.Context) error {
 	}
 
 	_ = c.Respond(&telebot.CallbackResponse{
-		Text: fmt.Sprintf("Категория «%s» удалена", deletedCategory),
+		Text: fmt.Sprintf("Категория «%s» заархивирована", oldCategory),
 	})
 
 	msg := fmt.Sprintf(
-		"🗑 <b>Удаление категорий</b>\n\n"+
-			"✅ Категория <b>«%s»</b> удалена.\n\n"+
-			"Нажмите на категорию, чтобы удалить её:",
-		deletedCategory,
+		"📦 <b>Архивация категорий</b>\n\n"+
+			"✅ Категория <b>«%s»</b> перенесена в архив.\n\n"+
+			"Нажмите на категорию, чтобы заархивировать её:",
+		oldCategory,
 	)
 
 	return c.Edit(msg, categoriesDeleteMarkup(categories), telebot.ModeHTML)

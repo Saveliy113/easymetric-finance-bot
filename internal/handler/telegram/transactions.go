@@ -88,6 +88,7 @@ func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, us
 			)
 		}
 	}
+	activeCategories := filterActiveCategories(categories)
 
 	waitMsg, _ := r.bot.Send(c.Chat(), "⏳ Обрабатываю операцию...")
 	_ = c.Notify(telebot.Typing)
@@ -98,7 +99,7 @@ func (r *Router) handleMoneyOperation(ctx context.Context, c telebot.Context, us
 		slog.String("text", inputText),
 	)
 
-	aiTransactionData, err := r.aiService.ParseTransaction(ctx, inputText, categories, user.Currency, user.Timezone)
+	aiTransactionData, err := r.aiService.ParseTransaction(ctx, inputText, activeCategories, user.Currency, user.Timezone)
 	if waitMsg != nil {
 		_ = r.bot.Delete(waitMsg)
 	}
